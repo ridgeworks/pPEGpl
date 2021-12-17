@@ -117,7 +117,7 @@ peg_bootstrap_grammar({|string||
 % initialization code
 %
 :-  (current_prolog_flag(optimise,Opt),
-	 nb_setval('pPEG:temp',Opt),  % save current value to restore on :- initialization/1
+	 nb_setval('pPEG:temp',Opt),      % save current value to restore on :- initialization/1
 	 set_prolog_flag(optimise,false)  % mainly optimizes arithmetic
 	).
 
