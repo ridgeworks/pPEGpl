@@ -187,8 +187,8 @@ peg_parse(GrammarSpec, Input, Result, Residue, OptionList) :-
 	(eval_(Eval, Env, Input, 0, PosOut, Result0)   % parse using Eval
 	 -> (Result0 = [] -> sub_string(Input,0,PosOut,_,Result) ; Result = Result0)  % parse successful, map [] to matched
 	 ;  (nb_getval('pPEG:errorInfo',errorInfo(Name,Inst,Pos))  % parse unsuccessful, check errorInfo
-	     -> peg_fail_msg(peg(errorInfo(GName,Name,Inst,Pos,Input)),Vrbse)
-	     ;  fail                                   % and fail
+	     -> peg_fail_msg(peg(errorInfo(GName,Name,Inst,Pos,Input)),Vrbse)  % fail with message
+	     ;  fail                                               %  or just fail
 	    )
 	),
 	(string_length(Input,PosOut)                   % did parse consume all input?	
@@ -199,7 +199,7 @@ peg_parse(GrammarSpec, Input, Result, Residue, OptionList) :-
 	         -> peg_fail_msg(peg(errorInfo(GName,Name,Inst,Pos,Input)),Vrbse)  % use errorInfo if relevant
 	         ;  peg_fail_msg(peg(incompleteParse(GName,Input,PosOut)),Vrbse)   % else use incomplete
 	        )
-		)
+	    )
 	).
 
 option_value(Option, Options, Default) :-
@@ -276,14 +276,14 @@ rule_elements(Rule,_GName,[Rule]).           % nothing else qualified by grammar
 % lookup previous match of rule Name in Env
 %
 peg_lookup_previous(Name,Env,Match) :-
-	(atom(Name) -> RName = Name ; atom_string(RName,Name)),
+	atom_string(RName,Name),
 	arg(5,Env,Ctxt),
 	lookup_match_(Ctxt,RName,Match).
 
 lookup_match_((Matches,Parent),Name,Match) :-
 	(memberchk((Name,Match),Matches)
 	 -> true
-	 ;  lookup_match_(Parent,Name,Match)
+	 ;  lookup_match_(Parent,Name,Match)     % at root, Parent = [] (see peg_setup_parse_/7)
 	).
 
 % 
@@ -296,7 +296,7 @@ eval_(id(Name), Env, Input, PosIn, PosOut, R) :-                % id "instructio
 	(memberchk(rule([id(Name), Exp]), Grammar)   % linear search, can be slow
 	 -> eval_(call_O(rule(PName,Exp)), Env, Input, PosIn, PosOut, R) % continue with call_O
 	 ;  print_message(warning, peg(undefined(PName))),  % undefined rule, fail with warning
-	 	fail 
+	    fail
 	). 
 
 eval_(alt(Ss), Env, Input, PosIn, PosOut, R) :-                 % alt "instruction"
@@ -317,7 +317,7 @@ eval_(pre([pfx(POp), Exp]), Env, Input, PosIn, PosOut, []) :-   % pre "instructi
 	 -> nb_linkval('pPEG:errorInfo',ErrorInfo),  % restore previous errorInfo
 	    % eval_(Exp) succeeded
 	    (POp = "&" -> PosOut = PosIn) % ; fail)
-	  ; nb_linkval('pPEG:errorInfo',ErrorInfo),  % restore previous errorInfo
+	 ;  nb_linkval('pPEG:errorInfo',ErrorInfo),  % restore previous errorInfo
 	    % eval_(Exp) failed
 	    (POp = "!" -> PosOut = PosIn
 	    ;POp = "~" -> (string_length(Input,PosIn) -> fail ; PosOut is PosIn+1)  % no match, bump position
@@ -415,19 +415,19 @@ eval_(extn_O(T), Env, Input, PosIn, PosOut, R) :-               % extn_O "instru
 
 % alt instruction
 alt_eval([S|Ss], Env, Input, PosIn, PosOut, R) :- 
-	eval_(S, Env, Input, PosIn, PosOut, R)
-	 -> true                                         % committed choice
-	 ;  alt_eval(Ss, Env, Input, PosIn, PosOut, R).  % first failed, keep trying
+	eval_(S, Env, Input, PosIn, PosOut, R)           % try S
+	 -> true                                         % succeed, committed choice
+	 ;  alt_eval(Ss, Env, Input, PosIn, PosOut, R).  % S failed, keep trying
 
 
 % seq instruction
 % responsible for capturing error info on failure 
 seq_eval([], _Start, _Env, _Input, PosIn, PosIn, []).
 seq_eval([S|Ss], Start, Env, Input, PosIn, PosOut, R) :-	
-	eval_(S, Env, Input, PosIn, PosNxt, Re), !,
-	(Re = [] -> R = Rs ; R = [Re|Rs]),  % don't accumulate empty results
-    seq_eval(Ss, Start, Env, Input, PosNxt, PosOut, Rs).  % recurse to next in sequence
-seq_eval([S|_], Start, Env, _Input, PosIn, _PosOut, _R) :-
+	eval_(S, Env, Input, PosIn, PosNxt, Re), !,      % try S
+	(Re = [] -> R = Rs ; R = [Re|Rs]),               % don't accumulate empty results
+    seq_eval(Ss, Start, Env, Input, PosNxt, PosOut, Rs).    % loop to next in sequence
+seq_eval([S|_], Start, Env, _Input, PosIn, _PosOut, _R) :-  % S failed, update errorInfo
 	PosIn > Start,  % something consumed in this sequence
 	nb_getval('pPEG:errorInfo',errorInfo(_,_,HWM)),
 	PosIn > HWM,
@@ -635,7 +635,7 @@ extn_pred(S,T) :-
 	),
 	T =.. [Func,StringArg].
 
-% extensions calls T/6 if defined, else just a tracepoint with nothing returned
+% extensions call T/6 if defined, else just a tracepoint with nothing returned
 extn_call(T,Env,Input,PosIn,PosOut,R) :-
 	functor(T,F,_),
 	current_predicate(F/6), !,                % succeed or fail on call
@@ -695,16 +695,15 @@ add_trace([rule([id(SName), Exp])|Rules], Name,
 	atom_string(AName,SName), % SName and Name equivalent to AName
 	atom_string(AName,Name),
 	!.
-add_trace([Rule|Rules], Name, 
-          [Rule|Rules]) :-
+add_trace([Rule|Rules], Name, [Rule|Rules]) :-
 	Rule = rule(AName, Exp),  % optimized Rule
 	nonvar(Exp),              % must be defined
 	atom_string(AName,Name),  % name matches
 	!,
 	% overwrite expression in place so all call references persist
 	setarg(2,Rule,extn_O(?(call_O(rule(AName,Exp))))). 
-add_trace([R|Rules],SName,[R|RulesT]) :-
-	add_trace(Rules,SName,RulesT).
+add_trace([Rule|Rules], Name, [Rule|RulesT]) :-
+	add_trace(Rules, Name, RulesT).
 
 % enable tracing
 peg_trace :-
@@ -796,7 +795,7 @@ peg_line_pos(Input,Pos,LinePos,LineNum,Text,EPos,ELineNum) :-
 	re_matchsub("[^\n\r]*(\n|\r\n?)",Input,Match,[start(LinePos)]), !,  % match a line
 	string_length(Match.0,Len),
 	NxtLinePos is LinePos+Len,
-	(Pos<NxtLinePos                            % Pos is within this line?
+	(Pos < NxtLinePos                          % Pos is within this line?
 	 -> string_concat(Text,Match.1,Match.0),   % yes
 	    EPos is Pos-LinePos,
 	    ELineNum = LineNum
