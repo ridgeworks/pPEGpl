@@ -173,5 +173,5 @@ See [`pPEG` API reference][pPEGref] for further details.
 
 [pPEGrepo]: https://github.com/pcanz/pPEG
 [failedpPEGref]: https://ridgeworks.github.io/pPEGpl/pPEG_API_Guide.md
-[pPEGref]: https://github.com/ridgeworks/pPEGpl/blob/main/doc/pPEG_API_Guide.md
+[pPEGref]: https://github.com/ridgeworks/pPEGpl/blob/main/docs/pPEG_API_Guide.md
 
