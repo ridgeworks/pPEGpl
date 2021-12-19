@@ -172,6 +172,5 @@ If SWI-Prolog has not been installed, see [downloads](http://www.swi-prolog.org/
 See [`pPEG` API reference][pPEGref] for further details.
 
 [pPEGrepo]: https://github.com/pcanz/pPEG
-[failedpPEGref]: https://ridgeworks.github.io/pPEGpl/pPEG_API_Guide.md
-[pPEGref]: https://github.com/ridgeworks/pPEGpl/blob/main/docs/pPEG_API_Guide.md
+[pPEGref]: https://ridgeworks.github.io/pPEGpl/pPEG_API_Guide.html
 

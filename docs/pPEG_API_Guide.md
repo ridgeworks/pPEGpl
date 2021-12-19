@@ -522,6 +522,8 @@ Succeeds when *String* unifies with the string defining the *pPEG* grammar. Exte
 #### peg_lookup_previous(*+Name,+Env,-String*)
 *Name* is a rule name (an atom or a string) and *Env* is the environment argument provided by the second argument in an extension call. `peg_lookup_previous/3` succeeds unifying *String* with the string previously matched by rule *Name*; otherwise it fails.
 
+[`pPEGpl` repository](https://github.com/ridgeworks/pPEGpl)
+
 [pPEGrepo]: https://github.com/pcanz/pPEG
 [pPEG_CSGs]: https://github.com/pcanz/pPEG/blob/master/docs/context-sensitive-grammars.md
 [pPEG_OpExps]: https://github.com/pcanz/pPEG/blob/master/docs/operator-expressions.md
