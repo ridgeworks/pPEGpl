@@ -25,7 +25,7 @@ Secondly, repeat operators like "`*`", "`+`" and "`?`" are greedy (match the lon
 
 - extendable. While all context free grammars and some context sensitive grammars (using '`&`' and '`!`' prefix operators) can be implemented in "pure" *pPEG*, other grammars may require the use of extensions which are hooks into the underlying programming language. The syntax and semantics of particular extensions may be implementation dependent and generally compromise portability.
 
-For the *pPEG* specification see [*pPEG*][pPEGrepo].
+For the *pPEG* specification see [*pPEG*][pPEGrepo]. An online "dingus" based on the Javascript implementation can be found [here](https://pcanz.github.io/pPEGjs/dingus.html)
 
 #### Pack `pPEGpl` for SWI-Prolog
 

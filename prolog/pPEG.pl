@@ -191,7 +191,7 @@ peg_parse(GrammarSpec, Input, Result, Residue, OptionList) :-
 	     ;  fail                                               %  or just fail
 	    )
 	),
-	(string_length(Input,PosOut)                   % did parse consume all input?	
+	(string_length(Input,PosOut)                   % did parse consume all input?
 	 -> Residue=""                                 % yes, set residue to empty
 	 ;  (Incomplete = true                         % no, incomplete allowed?
 	     -> sub_string(Input,PosOut,_,0,Residue)   % yes, set Residue to remaining
@@ -277,7 +277,7 @@ rule_elements(Rule,_GName,[Rule]).           % nothing else qualified by grammar
 %
 peg_lookup_previous(Name,Env,Match) :-
 	atom_string(RName,Name),
-	arg(5,Env,Ctxt),
+	arg(5,Env,Ctxt),                         % Env[5] = Ctxt for maintaining prior matches
 	lookup_match_(Ctxt,RName,Match).
 
 lookup_match_((Matches,Parent),Name,Match) :-
@@ -290,9 +290,8 @@ lookup_match_((Matches,Parent),Name,Match) :-
 % peg VM implementation - 9 native plus 6 "optimized" instructions
 %
 eval_(id(Name), Env, Input, PosIn, PosOut, R) :-                % id "instruction"
-	% map to call_O(Rule)
-	atom_string(PName,Name),
-	arg(1,Env,Grammar),  % Env[1] = Grammar
+	atom_string(PName,Name),                     % map to call_O(Rule), requires atom Name
+	arg(1,Env,Grammar),                          % Env[1] = Grammar
 	(memberchk(rule([id(Name), Exp]), Grammar)   % linear search, can be slow
 	 -> eval_(call_O(rule(PName,Exp)), Env, Input, PosIn, PosOut, R) % continue with call_O
 	 ;  print_message(warning, peg(undefined(PName))),  % undefined rule, fail with warning
@@ -304,7 +303,7 @@ eval_(alt(Ss), Env, Input, PosIn, PosOut, R) :-                 % alt "instructi
 
 eval_(seq(Ss), Env, Input, PosIn, PosOut, R) :-                 % seq "instruction"
 	seq_eval(Ss, PosIn, Env, Input, PosIn, PosOut, R).
-		
+
 eval_(rep([Exp, ROp]), Env, Input, PosIn, PosOut, R) :-         % rep "instruction"
 	rep_counts(ROp,Min,Max), !,                  % green cut for rep_counts
 	repeat_eval(0, Min, Max, Exp, Env, Input, PosIn, PosOut, R).
@@ -404,7 +403,7 @@ eval_(dq_O(Case,Matches), Env, Input, PosIn, PosOut, []) :-     % dq_O "instruct
 eval_(chs_O(In,MChars), _Env, Input, PosIn, PosOut, []) :-      % chs_O "instruction"
 	sub_atom(Input, PosIn, 1, _, R),          % input char, fails if end of Input
 	(chars_in_match(MChars,R) -> In = in ; In = notin),  % character in/notin set
-	PosOut is PosIn+1.	                      % match succeeded, consume 1 char
+	PosOut is PosIn+1.                        % match succeeded, consume 1 char
 
 eval_(extn_O(T), Env, Input, PosIn, PosOut, R) :-               % extn_O "instruction"
 	extn_call(T,Env,Input,PosIn,PosOut,R).
@@ -415,18 +414,18 @@ eval_(extn_O(T), Env, Input, PosIn, PosOut, R) :-               % extn_O "instru
 
 % alt instruction
 alt_eval([S|Ss], Env, Input, PosIn, PosOut, R) :- 
-	eval_(S, Env, Input, PosIn, PosOut, R)           % try S
-	 -> true                                         % succeed, committed choice
-	 ;  alt_eval(Ss, Env, Input, PosIn, PosOut, R).  % S failed, keep trying
+	eval_(S, Env, Input, PosIn, PosOut, R)                  % try S
+	 -> true                                                % succeed, committed choice
+	 ;  alt_eval(Ss, Env, Input, PosIn, PosOut, R).         % S failed, keep trying
 
 
 % seq instruction
 % responsible for capturing error info on failure 
 seq_eval([], _Start, _Env, _Input, PosIn, PosIn, []).
-seq_eval([S|Ss], Start, Env, Input, PosIn, PosOut, R) :-	
-	eval_(S, Env, Input, PosIn, PosNxt, Re), !,      % try S
-	(Re = [] -> R = Rs ; R = [Re|Rs]),               % don't accumulate empty results
-    seq_eval(Ss, Start, Env, Input, PosNxt, PosOut, Rs).    % loop to next in sequence
+seq_eval([S|Ss], Start, Env, Input, PosIn, PosOut, R) :-
+	eval_(S, Env, Input, PosIn, PosNxt, Re), !,             % try S
+	(Re = [] -> R = Rs ; R = [Re|Rs]),                      % don't accumulate empty results
+	seq_eval(Ss, Start, Env, Input, PosNxt, PosOut, Rs).    % loop to next in sequence
 seq_eval([S|_], Start, Env, _Input, PosIn, _PosOut, _R) :-  % S failed, update errorInfo
 	PosIn > Start,  % something consumed in this sequence
 	nb_getval('pPEG:errorInfo',errorInfo(_,_,HWM)),
@@ -552,7 +551,7 @@ peg_set_ws(_Name,_Grammar,[]).                     % non-existant rule, set to '
 % chars instruction
 % construct list of MChars for matching
 match_chars(MatchSet, MChars) :- 
-	sub_string(MatchSet,1,_,1,Str),  % strips []
+	sub_string(MatchSet,1,_,1,Str),  % strips outer [], ", '
 	string_chars(Str,Chars),
 	unescape_(Chars,MChars).
 
@@ -600,11 +599,11 @@ recursive_loop_check(Goal,Last,Pos,Name) :-
 
 % flatten arguments and remove [] (uses difference lists)	
 flatten_([], Tl, Tl) :-
-    !.
+	!.
 flatten_([Hd|Tl], Tail, List) :-
-    !,
-    flatten_(Hd, FlatHeadTail, List),
-    flatten_(Tl, Tail, FlatHeadTail).
+	!,
+	flatten_(Hd, FlatHeadTail, List),
+	flatten_(Tl, Tail, FlatHeadTail).
 flatten_(NonList, Tl, [NonList|Tl]).
 
 % build a ptree from a flattened list of args
@@ -654,11 +653,11 @@ prolog:message(peg(extension(T,Rem))) -->  % DCG
 ?(Exp,Env,Input,PosIn,PosOut,R) :-
 	(debugging(pPEG(trace),true)
 	 -> Exp = call_O(rule(Name,RExp)),  % already tracing, just eval rule expression
-	    arg(3,Env,Name),
+	    arg(3,Env,Name),                % Env[3] = current rule name
 	    eval_(RExp,Env,Input,PosIn,PosOut,R)
 	 ;  current_prolog_flag(debug,DF),  % save debug state
 	    peg_trace,                      % enable tracing and repeat call_O
-	    nb_linkval('pPEG:indent'," "),  % two spaces to start
+	    nb_linkval('pPEG:indent'," "),  % initially one space
 	    (eval_(Exp,Env,Input,PosIn,PosOut,Rt)
 	     -> peg_notrace,                % success, disable tracing and return a result
 	        set_prolog_flag(debug,DF),  % restore saved debug state
@@ -708,21 +707,21 @@ add_trace([Rule|Rules], Name, [Rule|RulesT]) :-
 % enable tracing
 peg_trace :-
 	debug(pPEG(trace)),
-	current_prolog_flag(verbose,V),      % suppress informational messages when enabling spy point
-	set_prolog_flag(verbose,silent),
-	spy(pPEG:eval_),
-	set_prolog_flag(verbose,V).
+	trace_control_(spy(pPEG:eval_)).
 
 % disable tracing
 peg_notrace :-
 	(debugging(pPEG(trace),true)
-	 -> current_prolog_flag(verbose,V),  % suppress informational messages when disabling spy point
-	    set_prolog_flag(verbose,silent),
-	    nospy(pPEG:eval_),
-	    set_prolog_flag(verbose,V),
-	    nodebug(pPEG(trace))
+	 -> trace_control_(nospy(pPEG:eval_)),
+        nodebug(pPEG(trace))
 	 ;  true
 	).
+
+trace_control_(G) :-    % suppress informational messages when controlling spy point
+	current_prolog_flag(verbose,V),
+	set_prolog_flag(verbose,silent),
+	call(G),
+	set_prolog_flag(verbose,V).
 
 :- multifile user:prolog_trace_interception/4.
 
@@ -926,7 +925,7 @@ escape_chars([C|CharsIn],['\\','u',X1,X2,X3,X4|CharsOut]) :-
 	divmod(Q3,16,R1,R2),
 	hex_value(X1,R1), hex_value(X2,R2), hex_value(X3,R3), hex_value(X4,R4),
 	escape_chars(CharsIn,CharsOut).
-	
+
 %
 % optimizing compiler for use with peg_compile
 % normally takes unoptimized ptree as input, but it's idempotent
@@ -951,7 +950,7 @@ chk_RDefs([Name:Rule|RDefs]) :-
 
 prolog:message(peg(optimize_fail(GName))) -->  % DCG
 	[ "pPEG: grammar ~w optimization failed" - [GName] ].
-	
+
 optimize_rules([],_RDefs,[]).
 optimize_rules([Rule|Rules],RDefs,[RuleO|RulesO]) :-
 	optimize_rule(Rule,RDefs,RuleO),
@@ -969,20 +968,20 @@ optimize_rule(rule(Name,Exp), _RDefs, rule(Name,Exp)).  % already optimized?
 
 prolog:message(peg(duplicate(Name))) -->  % DCG
 	[ "pPEG: rule ~w already defined" - [Name] ].
-	
+
 optimize_exp(id(Name), RDefs, call_O(Rule)) :-          % id(Name) ==> call_O(Rule)
 	memberchk(Name:Rule, RDefs).
-	
+
 optimize_exp(seq(Ins), RDefs, seq(Opt)) :-
-	optimize_exp_list(Ins,RDefs,Opt).	
-	
+	optimize_exp_list(Ins,RDefs,Opt).
+
 optimize_exp(alt(Ins), RDefs, alt(Opt)) :-
-	optimize_exp_list(Ins,RDefs,Opt).	
-	
+	optimize_exp_list(Ins,RDefs,Opt).
+
 optimize_exp(rep([Exp, ROp]), RDefs, rep_O(ExpO, Min, Max)) :-
 	rep_counts(ROp,Min,Max), !,
 	optimize_exp(Exp,RDefs,ExpO).
-	
+
 optimize_exp(pre([pfx("~"), chs(MatchSet)]), RDefs, chs_O(notin,MChars)) :- !,
 	optimize_exp(chs(MatchSet), RDefs, chs_O(_,MChars)).
 optimize_exp(pre([pfx(POp), Exp]), RDefs, pre([pfx(POp), ExpO])) :-
