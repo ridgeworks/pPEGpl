@@ -1,4 +1,4 @@
-##pPEG API for SWI-Prolog
+## pPEG API for SWI-Prolog
 
 ### Introduction
 
