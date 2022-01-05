@@ -1,9 +1,9 @@
 %
-% pPEG == SWI-Prolog module for parsing with pPEG grammars
+% pPEG == SWI-Prolog module for parsing strings with pPEG grammars
 %
 /*	The MIT License (MIT)
  *
- *	Copyright (c) 2021 Rick Workman
+ *	Copyright (c) 2021, 2022 Rick Workman
  *
  *	Permission is hereby granted, free of charge, to any person obtaining a copy
  *	of this software and associated documentation files (the "Software"), to deal
@@ -31,7 +31,7 @@
 	 peg_grammar/1,         % pPEG grammar source
 	 peg_lookup_previous/3  % used by CSG extensions to lookup previous matches
 	]).
-	
+
 :- use_module(library(strings),[string/4]).    % for quasi-quoted strings
 :- use_module(library(debug)).                 % for tracing (see peg_trace/0)
 :- use_module(library(option),[option/3]).     % for for option list processing
@@ -135,7 +135,7 @@ init_peg :-
 	foreach((nb_current(Key,_), atom_concat('pPEG:',_,Key)), nb_delete(Key)),  % clear pPEG globals
 	nodebug(pPEG(trace)),              % init trace
 	bootstrap_grammar.                 % initial load
-	
+
 user:exception(undefined_global_variable,'pPEG:$pPEG',retry) :-
 	bootstrap_grammar.                 % support multi-threads (need copy for each thread)              
 
@@ -150,7 +150,7 @@ bootstrap_grammar :-
 %
 peg_compile(Src, GrammarSpec) :-              % create an unoptimized parser (a ptree)
 	peg_compile(Src, GrammarSpec, []).
-	
+
 peg_compile(Src, GrammarSpec, OptionList) :-  % create parser, optionally optimized
 	peg_parse(pPEG, Src, Ptree, _, OptionList),
 	option_value(optimise(Opt),OptionList,true),
@@ -286,7 +286,7 @@ lookup_match_((Matches,Parent),Name,Match) :-
 	 ;  lookup_match_(Parent,Name,Match)     % at root, Parent = [] (see peg_setup_parse_/7)
 	).
 
-% 
+%
 % peg VM implementation - 9 native plus 6 "optimized" instructions
 %
 eval_(id(Name), Env, Input, PosIn, PosOut, R) :-                % id "instruction"
@@ -342,10 +342,10 @@ eval_(dq(S), Env, Input, PosIn, PosOut, []) :-                  % dq "instructio
 	    literal_match_(S1,SMatch),            % string to match
 	    string_upper(SMatch,Match),
 	    dq_match_list(Match,Matches),         % construct match list
-	    dq_match(Matches, upper, Env, Input, PosIn, PosOut)  % then match
+	    dqi_match(Matches, Env, Input, PosIn, PosOut)  % then match
 	 ;  literal_match_(S,Match),              % string to match
 	    dq_match_list(Match,Matches),         % construct match list
-	    dq_match(Matches, exact, Env, Input, PosIn, PosOut)  % then match
+	    dq_match(Matches, Env, Input, PosIn, PosOut)  % then match
 	).
 
 eval_(chs(MatchSet), _Env, Input, PosIn, PosOut, []) :-        % chs "instruction"
@@ -357,7 +357,7 @@ eval_(chs(MatchSet), _Env, Input, PosIn, PosOut, []) :-        % chs "instructio
 eval_(extn(S), Env, Input, PosIn, PosOut, R) :-                % extn "instruction"
 	extn_pred(S,T),
 	extn_call(T,Env,Input,PosIn,PosOut,R).
-	
+
 % additional instructions produced by optimizer
 eval_(call_O(rule(Name, Exp)), @(Grammar,WS,_RName,Dep,Ctxt), Input, PosIn, PosOut, R) :-  % call_O "instruction"
 	% also called from id instruction after lookup in non-optimised grammars
@@ -385,7 +385,7 @@ eval_(call_O(rule(Name, Exp)), @(Grammar,WS,_RName,Dep,Ctxt), Input, PosIn, PosO
 	).
 
 eval_(rep_O(Exp, Min, Max), Env, Input, PosIn, PosOut, R) :-    % rep_O "instruction"
-	repeat_eval(0, Min, Max, Exp, Env, Input, PosIn, PosOut, R).	
+	repeat_eval(0, Min, Max, Exp, Env, Input, PosIn, PosOut, R).
 
 eval_(sq_O(Case,Match), _Env, Input, PosIn, PosOut, []) :-      % sq_O "instruction"
 	(Case = exact
@@ -398,7 +398,11 @@ eval_(sq_O(Case,Match), _Env, Input, PosIn, PosOut, []) :-      % sq_O "instruct
 	PosOut is PosIn+Len.
 
 eval_(dq_O(Case,Matches), Env, Input, PosIn, PosOut, []) :-     % dq_O "instruction" 
-	dq_match(Matches, Case, Env, Input, PosIn, PosOut).
+	(Case = exact
+	 -> dq_match(Matches, Env, Input, PosIn, PosOut)
+	 ;  % assume Case=upper
+	    dqi_match(Matches, Env, Input, PosIn, PosOut)
+	).
 
 eval_(chs_O(In,MChars), _Env, Input, PosIn, PosOut, []) :-      % chs_O "instruction"
 	sub_atom(Input, PosIn, 1, _, R),          % input char, fails if end of Input
@@ -432,7 +436,7 @@ seq_eval([S|_], Start, Env, _Input, PosIn, _PosOut, _R) :-  % S failed, update e
 	PosIn > HWM,
 	arg(3,Env,FName),  % Env[3] = current rule name from environment
 	nb_linkval('pPEG:errorInfo',errorInfo(FName,S,PosIn)),
-	fail.	
+	fail.
 
 
 % rep instruction 
@@ -488,20 +492,25 @@ dq_match_list_(M,_,M).               % no trailing ws
 
 % Match input against a dq match list (see below)
 % Grammar required in case there's user defined whitespace
-dq_match([], _Case, _Env, _Input, PosIn, PosIn).
-dq_match([Match|Matches], Case, Env, Input, PosIn, PosOut) :-
-	(Match = ""  % whitespace here?
-	 -> skip_ws(Env,Input,PosIn,Pos1)              % yes
-	 ;  (Case = exact                              % no
-	     -> sub_string(Input,PosIn,Len,_,Match)    % case sensitive match
-	     ;  % assume Case = upper
-	        string_length(Match,Len),              % case insensitive match
-	        sub_string(Input,PosIn,Len,_,R),
-	        string_upper(R,Match)
-	    ),
+dq_match([], _Env, _Input, PosIn, PosIn).
+dq_match([Match|Matches], Env, Input, PosIn, PosOut) :-
+	(Match = ""                                  % whitespace here?
+	 -> skip_ws(Env,Input,PosIn,Pos1)            % yes
+	 ;  sub_string(Input,PosIn,Len,_,Match),     % else case sensitive match
 	    Pos1 is PosIn+Len
 	),
-	dq_match(Matches, Case, Env, Input, Pos1, PosOut).
+	dq_match(Matches, Env, Input, Pos1, PosOut).
+
+dqi_match([], _Env, _Input, PosIn, PosIn).
+dqi_match([Match|Matches], Env, Input, PosIn, PosOut) :-
+	(Match = ""                                  % whitespace here?
+	 -> skip_ws(Env,Input,PosIn,Pos1)            % yes
+	 ;  string_length(Match,Len),                % else case insensitive match
+	    sub_string(Input,PosIn,Len,_,R),
+	    string_upper(R,Match),
+	    Pos1 is PosIn+Len
+	),
+	dqi_match(Matches, Env, Input, Pos1, PosOut).
 
 % skip white space in Input moving curser
 skip_ws(@(Grammar,WSExp,_,Dep,Ctxt),Input,PosIn,PosOut) :-
@@ -515,8 +524,8 @@ skip_ws(@(Grammar,WSExp,_,Dep,Ctxt),Input,PosIn,PosOut) :-
 	     ; true
 	    ),
 	    % need to ignore any error information generated by _space_
- 	    nb_getval('pPEG:errorInfo',ErrorInfo),   % save errorInfo
- 	    nb_linkval('pPEG:errorInfo',[]),         % disable errorInfo collection
+	    nb_getval('pPEG:errorInfo',ErrorInfo),   % save errorInfo
+	    nb_linkval('pPEG:errorInfo',[]),         % disable errorInfo collection
 	    debugging(pPEG(trace),Trace),            % disable tracing while parsing whitespace
 	    (Trace = true -> peg_notrace ; true),
 	    (eval_(WSExp, @(Grammar,WSExp,'_space_',Dep1,Ctxt), Input, PosIn, PosOut, _R)  % Note: Result discarded
@@ -555,7 +564,7 @@ match_chars(MatchSet, MChars) :-
 	string_chars(Str,Chars),
 	unescape_(Chars,MChars).
 
-unescape_([],[]).	
+unescape_([],[]).
 unescape_(['\\',u,C1,C2,C3,C4|NxtChars],[Esc|MChars]) :-
 	hex_value(C1,V1), hex_value(C2,V2), hex_value(C3,V3), hex_value(C4,V4), !,
 	VEsc is ((V1*16+V2)*16+V3)*16+V4,
@@ -597,7 +606,7 @@ recursive_loop_check(Goal,Last,Pos,Name) :-
 	 ;  true
 	).
 
-% flatten arguments and remove [] (uses difference lists)	
+% flatten arguments and remove [] (uses difference lists)
 flatten_([], Tl, Tl) :-
 	!.
 flatten_([Hd|Tl], Tail, List) :-
@@ -642,7 +651,7 @@ extn_call(T,Env,Input,PosIn,PosOut,R) :-
 extn_call(T,_Env,Input,PosIn,PosIn,[]) :-     % default - assume string, treat as trace message
 	sub_string(Input,PosIn,_,0,Rem),
 	print_message(information, peg(extension(T,Rem))).
-	
+
 prolog:message(peg(extension(T,Rem))) -->  % DCG
 	[ "Extension ~w parsing: ~p\n" - [T,Rem] ].
 
@@ -859,7 +868,7 @@ vm_instruction(rep_O(Exp, N, -1), Is) :-
 vm_instruction(rep_O(Exp, M, N), Is) :-
 	rep_counts(range([num(StrM),_,num(StrN)]),M,N),	
 	vm_instruction(Exp,I),
-	(I = [] -> Is = I ; atomics_to_string([I,'*',StrM,"..",StrN],Is)).	
+	(I = [] -> Is = I ; atomics_to_string([I,'*',StrM,"..",StrN],Is)).
 vm_instruction(pre([pfx(Chs),Exp]), Is) :-
 	vm_instruction(Exp,I),
 	(I = [] -> Is = I ; string_concat(Chs,I,Is)).
@@ -911,13 +920,13 @@ unescape_std(Sin,Sout) :-
 	escape_chars(CharsIn,CharsOut),
 	string_chars(Sout,CharsOut).
 
-escape_chars([],[]).	
+escape_chars([],[]).
 escape_chars([C|CharsIn],[C|CharsOut]) :-
 	char_code(C,CS), between(32,126,CS), !,     % ASCII
-	escape_chars(CharsIn,CharsOut).	
+	escape_chars(CharsIn,CharsOut).
 escape_chars([ECh|CharsIn],['\\',Ch|CharsOut]) :- 
 	std_escape_(Ch,ECh),!,                      % escapes
-	escape_chars(CharsIn,CharsOut).	
+	escape_chars(CharsIn,CharsOut).
 escape_chars([C|CharsIn],['\\','u',X1,X2,X3,X4|CharsOut]) :-
 	char_code(C,CS), % (CS =< 31 ; CS >= 127),  % outside ASCII, but not std escape
 	divmod(CS,16,Q4,R4),
@@ -1026,7 +1035,7 @@ optimize_exp(extn_O(T), _RDefs, extn_O(T)).                       % already opti
 optimize_exp_list([],_RDefs,[]).
 optimize_exp_list([Exp|Exps],RDefs,[ExpO|ExpOs]) :-
 	optimize_exp(Exp,RDefs,ExpO),
-	optimize_exp_list(Exps,RDefs,ExpOs).	 
+	optimize_exp_list(Exps,RDefs,ExpOs).
 
 % optimize dq cases
 dq_instruction([],Case,sq_O(Case,"")).            % empty string -> sq_O

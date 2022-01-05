@@ -1,6 +1,6 @@
 /*	The MIT License (MIT)
  *
- *	Copyright (c) 2021 Rick Workman
+ *	Copyright (c) 2021, 2022 Rick Workman
  *
  *	Permission is hereby granted, free of charge, to any person obtaining a copy
  *	of this software and associated documentation files (the "Software"), to deal
@@ -28,12 +28,13 @@
 :- if(true).
 :- (current_module(pPEG) -> true ; use_module(library(pPEG))).
 /*
-:- module(pPEG,[       % module pPEG exports:
-	 peg_compile/2,    % create a grammar from a source string
-	 peg_compile/3,    % as above with option list
-	 peg_parse/3,      % use a pPEG grammar to parse an Input string to a ptree Result
-	 peg_parse/5,      % as above with unmatched residue and option list
-	 peg_grammar/1     % pPEG grammar source
+:- module(pPEG,[            % module pPEG exports:
+	 peg_compile/2,         % create a grammar from a source string
+	 peg_compile/3,         % as above with option list
+	 peg_parse/3,           % use a pPEG grammar to parse an Input string to a ptree Result
+	 peg_parse/5,           % as above with unmatched residue and option list
+	 peg_grammar/1,         % pPEG grammar source
+	 peg_lookup_previous/3  % used by CSG extensions to lookup previous matches
 	]).
 */
 %:- set_test_options([silent(true)]).
@@ -207,6 +208,51 @@ test(esc, R=rule1("\n\r\t\\\u005d")) :-
 
 test(cws, R=rule1([text("abc"),text("def")])) :-
 	parse_test("rule1 = (text \" \")* text = [a-z]*_space_ = [ \t\n\r?]*", "abc ? def  \t", R, []).
+
+test(csg_lookup, R=elem([tag("div"), content([text(" abc "), elem([tag("p"), text("par")])])])) :-
+	G={|string||
+    elem    = '<' tag '>' content '</' <@ tag> '>'
+    content = (text / elem)*
+    tag     = [a-zA-Z]+
+    text    = ~[<]+
+	|}, parse_test(G, "<div> abc <p>par</p></div>", R, []).
+
+test(re_match, R=num("12.34e56")) :-
+	G="num= <re_match ((-?[1-9][0-9]*)|(-?0))([.][0-9]+)?([eE][+-]?[0-9]+)? >",
+    parse_test(G, "12.34e56", R, []).
+
+test(t_3_misc, R=s("xyz")) :-
+	parse_test("s=_any*_eof _any=~[] _eof=!_any", "xyz", R, []).
+test(t_3_misc, R=s("x,x,x")) :-
+	parse_test("s=_x(','_x)*_x='x'/''", "x,x,x", R, []).
+test(t_3_misc, R=s("x,,,x,,")) :-
+	parse_test("s=_x(','_x)*_x='x'/''", "x,,,x,,", R, []).
+test(t_3_misc, R=s("abc ABC aBc")) :-
+	parse_test("s=\" abc\"i*", "abc ABC aBc", R, []).
+test(t_3_misc, R=s("\\n")) :-
+	parse_test("s='\\' [nrt]", "\\n", R, []).
+test(t_3_misc, R=date("2021-04-05")) :-
+	G={|string||
+	# test comments....
+	date  = _year '-' _month '-' _day
+	# ...
+	_year  = [1-2] [0-9]*3
+	_month = [0-1] [0-9] # comment..
+	_day   = [0-3] [0-9]
+	# last comment
+	|}, parse_test(G, "2021-04-05", R, []).
+
+test(t_4_errors, R=='Err') :-
+	catch(parse_test("s='a' x'b'x=''y'z'y=x", "ayb", R, []), error(resource_error(_),_), R='Err').
+test(t_4_errors, fail) :-
+	parse_test("s=x y z x='x'", "xxx", _R, []).
+test(t_4_errors, fail) :-
+	G={|string||
+	date   = _year '-' _month '-' _day
+	_year  = [1-2] [0-9]*3
+	_month = [0-1] [0-9]
+	_day   = [0-3] [0-9]
+	|}, parse_test(G, "2021-04/05", R, []).
 
 
 :- end_tests(peg_functions).

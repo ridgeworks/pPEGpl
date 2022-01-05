@@ -1,5 +1,3 @@
-## `pPEG` API for SWI-Prolog
-
 ### Introduction
 
 The name *pPEG* stands for portable *PEG*, and *PEG* is an acronym for "Parsing Expression Grammars", a type of grammar well suited for parsing machine-oriented syntax due to its deterministic behaviour and *O(N)* performance (*N* = length of the input to be parsed). Any context free grammar, and some context sensitive grammars, can be implemented as a *PEG* grammar, which makes *PEG* considerably more expressive than regular expressions.
