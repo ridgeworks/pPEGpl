@@ -29,7 +29,7 @@ For the *pPEG* specification see [*pPEG*][pPEGrepo]. An online "dingus" based on
 
 #### Pack `pPEGpl` for SWI-Prolog
 
-`pPEGpl` is an add-on pack for SWI-Prolog implemented entirely in Prolog which complements the parsing capabilities of regular expressions (`library(pcre)`) and DCG's already available to the SWI-Prolog community. It consists of  module (`pPEG`) with three core interface predicates: `peg_compile`, for constructing a parser term from the grammar source (analogous to `pcre:re_compile`), `peg_parse`, for parsing a input string in the language specified by the parser term (analogous to `pcre:re_matchsub`), and `peg_grammar` for accessing the `pPEG` source grammar, largely for documentation/specification purposes. (A second module, `pPEGutilities`, contains miscellaneous predicates that facilitate processing the results of a `peg_parse` operation.) The remainder of this section is an overview of how to use `pPEG` in Prolog applications; for the nitty-gritty details see the [`pPEG` API reference][pPEGref].
+`pPEGpl` is an add-on pack for SWI-Prolog implemented entirely in Prolog which complements the parsing capabilities of regular expressions (`library(pcre)`) and DCG's already available to the SWI-Prolog community. It consists of  module (`pPEG`) with three core interface predicates: `peg_compile`, for constructing a parser term from the grammar source (analogous to `pcre:re_compile`), `peg_parse`, for parsing a input string in the language specified by the parser term (analogous to `pcre:re_matchsub`), and `peg_grammar` for accessing the `pPEG` source grammar, largely for documentation/specification purposes. (A second module, `pPEGutilities`, contains miscellaneous predicates that facilitate processing the results of a `peg_parse` operation and modules `csg_pPEGxt` and `rexp_pPEGxt` contain useful extensions.) The remainder of this section is an overview of how to use `pPEG` in Prolog applications; for the nitty-gritty details see the [`pPEG` API reference][pPEGref].
 
 Although any string representation will do, to avoid the pitfalls of escape sequences, the recommended way of representing the source of a *pPEG* grammar in Prolog is a quasi-quoted string (`library(strings)`). Here's a [*pPEG*][pPEGrepo] grammar for a quasi-quoted string in a quasi-quoted string:
 
@@ -169,7 +169,7 @@ If SWI-Prolog has not been installed, see [downloads](http://www.swi-prolog.org/
 
 	﻿?- use_module(library(pPEG)).
 ```
-See [`pPEG` API reference][pPEGref] for further details and examples.
+In addition to the core `pPEG` module, modules `csg_pPEGxt` (extension supporting some context sensitive grammars), `rexp_pPEGxt` (extension for matching text with regular expressions), and `pPEGutilities` are installed in the library. See [`pPEG` API reference][pPEGref] for further details and examples.
 
 [pPEGrepo]: https://github.com/pcanz/pPEG
 [pPEGref]: https://ridgeworks.github.io/pPEGpl/pPEG_API_Guide.html

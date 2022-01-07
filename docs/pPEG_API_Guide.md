@@ -267,7 +267,7 @@ For the first option, the implementation of the extension predicate takes five a
 - *-PosOut* - a positive integer `>= PosIn` containing the position in `Input` after executing the extension predicate.
 - *-Result* - any result (normally a *ptree* or `[]`) the extension wishes to define
 
-The `pPEG` pack predefines a couple of extensions which will be used as examples. The first is the `???` extension which just invokes the SWI-Prolog debugger:
+Here's an example of an extension "named" `???`which just invokes the SWI-Prolog debugger:
 ```
 ???("",_Env,_Input,PosIn,PosIn,[]) :- trace.
 ```
@@ -278,7 +278,7 @@ Note that the cursor position is unchanged and the result is `[]` (will be ignor
 G = 'Peg'([rule(r, seq([extn_O(???), rep_O(sq_O(exact, "x"), 0, -1)]))]),
 R = r("xx").
 ```
-Unless you're debugging `pPEG` itself this isn't a very useful extension, so here's a more practical example. In addition to extending the domain of grammars that *pPEG* can express, extensions can be used to improve performance. SWI-Prolog provides a regular expression library ([`library(pcre)`][swip-pcre]) which provides an interface to a low level implementation in C. Provided enough can be done in C to overcome any cost in navigating the built-in primitive interface, performance improvements can be had. Here's an extension which takes a regular expression and recognizes  matching text in the `Input` (this extension comes for "free" as part of the `pPEG` module):
+Unless you're debugging `pPEG` itself this isn't a very useful extension, so here's a more practical example. In addition to extending the domain of grammars that *pPEG* can express, extensions can be used to improve performance. SWI-Prolog provides a regular expression library ([`library(pcre)`][swip-pcre]) which provides an interface to a low level implementation in C. Provided enough can be done in C to overcome any cost in navigating the built-in primitive interface, performance improvements can be had. Here's an extension which takes a regular expression and recognizes  matching text in the `Input` (the `pPEG` pack contains the module `library(rexp_pPEGxt)` implementing this extension):
 ```
 :- use_module(library(pcre),[re_matchsub/4]).  % regular expression support
 
@@ -375,7 +375,7 @@ The Markdown example is typical of the need to use a *CSG* when parsing machine 
 
 The extension `<@ name>` exactly matches the current input text with the previous match by rule `name`. If `name` has not previously matched anything, the extension matches nothing, i.e., `""`. If there is a previous match, but it doesn't match the current input text it fails. The result of the `@` extension is equivalent to matching the literal containing the same text.
 
-The implementation of the `@` extension (already provided by module `pPEG`):
+The implementation of the `@` extension can be found in `library(csg_pPEGxt)`:
 ```
 @(Name,Env,Input,PosIn,PosOut,[]) :-
     (peg_lookup_previous(Name,Env,Match)
@@ -385,7 +385,7 @@ The implementation of the `@` extension (already provided by module `pPEG`):
      ;  PosOut = PosIn                                   % no previous, match nothing
     ).
 ```
-Note: `peg_lookup_previous/3` is a public interface predicate of `pPEG` which can be used to build custom *CSG* extensions when "exact" matching doesn't fit the need.
+Note: `peg_lookup_previous/3` is a public interface predicate of `pPEG` which can be used to build other custom *CSG* extensions when "exact" matching doesn't fit the need.
 
 Although you can use semantic analysis to enforce XML tag matching, here's a "tiny" XML grammar which does this:
 ```

@@ -27,6 +27,8 @@
 %:- if(exists_source(library(pPEG))).
 :- if(true).
 :- (current_module(pPEG) -> true ; use_module(library(pPEG))).
+:- (current_module(rexp_pPEGxt) -> true ; use_module(library(rexp_pPEGxt))).
+:- (current_module(csg_pPEGxt) -> true ; use_module(library(csg_pPEGxt))).
 /*
 :- module(pPEG,[            % module pPEG exports:
 	 peg_compile/2,         % create a grammar from a source string
@@ -211,15 +213,15 @@ test(cws, R=rule1([text("abc"),text("def")])) :-
 
 test(csg_lookup, R=elem([tag("div"), content([text(" abc "), elem([tag("p"), text("par")])])])) :-
 	G={|string||
-    elem    = '<' tag '>' content '</' <@ tag> '>'
-    content = (text / elem)*
-    tag     = [a-zA-Z]+
-    text    = ~[<]+
+	elem    = '<' tag '>' content '</' <@ tag> '>'
+	content = (text / elem)*
+	tag     = [a-zA-Z]+
+	text    = ~[<]+
 	|}, parse_test(G, "<div> abc <p>par</p></div>", R, []).
 
 test(re_match, R=num("12.34e56")) :-
 	G="num= <re_match ((-?[1-9][0-9]*)|(-?0))([.][0-9]+)?([eE][+-]?[0-9]+)? >",
-    parse_test(G, "12.34e56", R, []).
+	parse_test(G, "12.34e56", R, []).
 
 test(t_3_misc, R=s("xyz")) :-
 	parse_test("s=_any*_eof _any=~[] _eof=!_any", "xyz", R, []).
@@ -252,7 +254,7 @@ test(t_4_errors, fail) :-
 	_year  = [1-2] [0-9]*3
 	_month = [0-1] [0-9]
 	_day   = [0-3] [0-9]
-	|}, parse_test(G, "2021-04/05", R, []).
+	|}, parse_test(G, "2021-04/05", _R, []).
 
 
 :- end_tests(peg_functions).
