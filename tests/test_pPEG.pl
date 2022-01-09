@@ -224,7 +224,7 @@ test(csg_lookup, R='Raw'([raw("raw string")])) :-
 	Raw   = 'r' _fence '"' raw '"' <csg_pPEGxt:@ _fence>
 	raw   = ~('"' <csg_pPEGxt:@ _fence>)*
 	_fence = '#'+
-	|}, parse_test(G, ""r##\"raw string\"##"", R, []).
+	|}, parse_test(G, "r##\"raw string\"##", R, []).
 
 test(re_match, R=num("12.34e56")) :-
 	G="num= <re_match ((-?[1-9][0-9]*)|(-?0))([.][0-9]+)?([eE][+-]?[0-9]+)? >",

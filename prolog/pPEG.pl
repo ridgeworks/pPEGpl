@@ -598,7 +598,7 @@ std_escape_('\\','\\').
 
 hex_value(C,V) :- char_type(C,digit(V)) -> true ; char_type(C,xdigit(V)).
 
-% search for Ch in list of MChars (including escapes and ranges)
+% search for Ch in list of MChars (including ranges)
 chars_in_match([Cl,'-',Cu|MChars],Ch) :- !,                   % range
 	(Cl@=<Ch,Ch@=<Cu -> true ; chars_in_match(MChars,Ch)).
 chars_in_match([Cl|MChars],Ch) :-                             % equivalence
@@ -664,7 +664,7 @@ extn_pred(S,T) :-
 % extensions call T/6 if defined, else just a tracepoint with nothing returned
 extn_call(T,Env,Input,PosIn,PosOut,R) :-
 	catch(call(T,Env,Input,PosIn,PosOut,R),
-	      Err,extn_error(Err,T,Env,Input,PosIn,PosOut,R)
+	      Err, extn_error(Err,T,Env,Input,PosIn,PosOut,R)
 	).
 
 extn_error(error(existence_error(procedure,_),_),T,_Env,Input,PosIn,PosIn,[]) :- !,
