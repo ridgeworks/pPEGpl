@@ -643,30 +643,38 @@ build_ptree(Arg,_RType,_Match,PName,R) :-      % general case, construct ptree n
 
 
 % extn instruction
-% convert extension contents to callable Func(StringArg)
+% convert extension contents to callable Mod:Pred(StringArg)
 extn_pred(S,T) :-
 	(sub_string(S,Pos,1,_," ")                 % contains a space at Pos
 	 -> FLen is Pos-1,                         % functor length
-	    sub_atom(S,1,FLen,_,Func),             % strip <
+	    sub_atom(S,1,FLen,_,Pred),             % strip <
 	    APos is Pos+1,                         % StringArg pos           
 	    sub_string(S,APos,_,1,S1),             % also strip >    
 	    split_string(S1,""," ",[StringArg])    % and trim whitespace from Arg 
-	 ;  sub_atom(S,1,_,1,Func),                % empty StringArg
+	 ;  sub_atom(S,1,_,1,Pred),                % empty StringArg
 	    StringArg = ""
 	),
-	T =.. [Func,StringArg].
+	(split_string(Pred,':','',[SM,SF])         % optional module specification
+	 -> atom_string(M,SM), atom_string(F,SF),
+	    P =.. [F,StringArg],
+	    T = M:P
+	 ;  T =.. [Pred,StringArg]
+	).
 
 % extensions call T/6 if defined, else just a tracepoint with nothing returned
 extn_call(T,Env,Input,PosIn,PosOut,R) :-
-	functor(T,F,_),
-	current_predicate(F/6), !,                % succeed or fail on call
-	call(T,Env,Input,PosIn,PosOut,R).
-extn_call(T,_Env,Input,PosIn,PosIn,[]) :-     % default - assume string, treat as trace message
+	catch(call(T,Env,Input,PosIn,PosOut,R),
+	      Err,extn_error(Err,T,Env,Input,PosIn,PosOut,R)
+	).
+
+extn_error(error(existence_error(procedure,_),_),T,_Env,Input,PosIn,PosIn,[]) :- !,
 	sub_string(Input,PosIn,_,0,Rem),
 	print_message(information, peg(extension(T,Rem))).
+extn_error(Err,_T,_Env,_Input,_PosIn,_PosOut,_R) :-
+	throw(Err).
 
 prolog:message(peg(extension(T,Rem))) -->  % DCG
-	[ "Extension ~w parsing: ~p\n" - [T,Rem] ].
+	[ "Extension ~p parsing: ~p\n" - [T,Rem] ].
 
 %
 % set tracing on named rules

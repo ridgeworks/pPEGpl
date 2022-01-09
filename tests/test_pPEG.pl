@@ -26,6 +26,7 @@
 :- use_module(library(plunit)).
 %:- if(exists_source(library(pPEG))).
 :- if(true).
+:- use_module(library(strings),[string/4]).    % for quasi-quoted strings
 :- (current_module(pPEG) -> true ; use_module(library(pPEG))).
 :- (current_module(rexp_pPEGxt) -> true ; use_module(library(rexp_pPEGxt))).
 :- (current_module(csg_pPEGxt) -> true ; use_module(library(csg_pPEGxt))).
@@ -218,6 +219,12 @@ test(csg_lookup, R=elem([tag("div"), content([text(" abc "), elem([tag("p"), tex
 	tag     = [a-zA-Z]+
 	text    = ~[<]+
 	|}, parse_test(G, "<div> abc <p>par</p></div>", R, []).
+test(csg_lookup, R='Raw'([raw("raw string")])) :-
+	G={|string||
+	Raw   = 'r' _fence '"' raw '"' <csg_pPEGxt:@ _fence>
+	raw   = ~('"' <csg_pPEGxt:@ _fence>)*
+	_fence = '#'+
+	|}, parse_test(G, ""r##\"raw string\"##"", R, []).
 
 test(re_match, R=num("12.34e56")) :-
 	G="num= <re_match ((-?[1-9][0-9]*)|(-?0))([.][0-9]+)?([eE][+-]?[0-9]+)? >",

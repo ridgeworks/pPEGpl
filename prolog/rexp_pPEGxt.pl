@@ -3,7 +3,7 @@
 %
 :- module(rexp_pPEGxt, [re_match/6]).
 
-:- use_module(library(pcre),[re_matchsub/4]).    % for quasi-quoted strings
+:- use_module(library(pcre),[re_matchsub/4]).
 
 re_match(RExp,_Env,Input,PosIn,PosOut,[]) :-
 	string_length(Input,ILen), PosIn < ILen,  % guard against domain error

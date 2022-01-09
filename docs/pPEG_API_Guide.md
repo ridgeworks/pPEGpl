@@ -256,7 +256,7 @@ false.
 The standard defintion of *pPEG* includes an extension mechanism enabling additional functionality necessary to implement some context sensitive grammars within a *pPEG* framework. It should be noted that, in general, extensions are not portable between *pPEG* implementations so they should be used with discretion.
 
 The *pPEG* extension syntax allows extensions to be defined in angle brackets containing  arbitrary syntax that doesn't itself contain an angle bracket. In `pPEG` (a Prolog implemenation of *pPEG*) the text between angle brackets is interpreted as follows:
-- if the text contains spaces, everything up to the first space specifies a predicate. Everything after the space up to the trailing space is trimmed of spaces and becomes the first argument in the predicate call. Five additional arguments are supplied by the parser as documented below, and the arity 6 predicate is then called.
+- if the text contains spaces, everything up to the first space specifies a predicate, including an optional module specifier. Everything after the space up to the trailing space is trimmed of spaces and becomes the first argument in the predicate call. Five additional arguments are supplied by the parser as documented below, and the arity 6 predicate is then called.
 - if there are no spaces in the text, the entire content is assumed to be the name of an arity 6 predicate and the first argument will be the empty string.
 - If the above is not true, the text is interpreted as the content of an "Information" message and printed using [`print_message/2`][swip-print_message]. (Note that "information" messages will be printed regardless of the `verbose` setting, although they can be intercepted using [`message_hook/3`][swip-message_hook].)
 
@@ -280,7 +280,9 @@ R = r("xx").
 ```
 Unless you're debugging `pPEG` itself this isn't a very useful extension, so here's a more practical example. In addition to extending the domain of grammars that *pPEG* can express, extensions can be used to improve performance. SWI-Prolog provides a regular expression library ([`library(pcre)`][swip-pcre]) which provides an interface to a low level implementation in C. Provided enough can be done in C to overcome any cost in navigating the built-in primitive interface, performance improvements can be had. Here's an extension which takes a regular expression and recognizes  matching text in the `Input` (the `pPEG` pack contains the module `library(rexp_pPEGxt)` implementing this extension):
 ```
-:- use_module(library(pcre),[re_matchsub/4]).  % regular expression support
+:- module(rexp_pPEGxt, [re_match/6]).
+
+:- use_module(library(pcre),[re_matchsub/4]).
 
 re_match(RExp,_Env,Input,PosIn,PosOut,[]) :-
     string_length(Input,ILen), PosIn < ILen,  % guard against domain error
