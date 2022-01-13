@@ -181,20 +181,20 @@ peg_parse(GrammarSpec, Input, Result, Residue, OptionList) :-
 	option_value(verbose(Vrbse),OptionList,GVrbse),         % default = global setting
 	(Vrbse = normal
 	 -> nb_linkval('pPEG:errorInfo',errorInfo([],[],0))     % init error info - ground so use linkval
-	 ;  nb_linkval('pPEG:errorInfo',[])  % verbose \= normal so disable collection
+	 ;  nb_linkval('pPEG:errorInfo',[])                     % verbose \= normal so disable collection
 	),
 	peg_setup_parse_(GrammarSpec,Input,Vrbse,TRules,GName,Env,Eval),  % setup initial Env and Eval
-	(eval_(Eval, Env, Input, 0, PosOut, Result0)   % parse using Eval
+	(eval_(Eval, Env, Input, 0, PosOut, Result0)            % parse using Eval
 	 -> (Result0 = [] -> sub_string(Input,0,PosOut,_,Result) ; Result = Result0)  % parse successful, map [] to matched
 	 ;  (nb_getval('pPEG:errorInfo',errorInfo(Name,Inst,Pos))  % parse unsuccessful, check errorInfo
 	     -> peg_fail_msg(peg(errorInfo(GName,Name,Inst,Pos,Input)),Vrbse)  % fail with message
 	     ;  fail                                               %  or just fail
 	    )
 	),
-	(string_length(Input,PosOut)                   % did parse consume all input?
-	 -> Residue=""                                 % yes, set residue to empty
-	 ;  (Incomplete = true                         % no, incomplete allowed?
-	     -> sub_string(Input,PosOut,_,0,Residue)   % yes, set Residue to remaining
+	(string_length(Input,PosOut)                            % did parse consume all input?
+	 -> Residue=""                                          % yes, set residue to empty
+	 ;  (Incomplete = true                                  % no, incomplete allowed?
+	     -> sub_string(Input,PosOut,_,0,Residue)            % yes, set Residue to remaining
 	     ;  ((nb_getval('pPEG:errorInfo',errorInfo(Name,Inst,Pos)), PosOut =< Pos)
 	         -> peg_fail_msg(peg(errorInfo(GName,Name,Inst,Pos,Input)),Vrbse)  % use errorInfo if relevant
 	         ;  peg_fail_msg(peg(incompleteParse(GName,Input,PosOut)),Vrbse)   % else use incomplete
@@ -443,16 +443,16 @@ alt_eval([S|Ss], Env, Input, PosIn, PosOut, R) :-
 % responsible for capturing error info on failure 
 seq_eval([], _Start, _Env, _Input, PosIn, PosIn, []).
 seq_eval([S|Ss], Start, Env, Input, PosIn, PosOut, R) :-
-	eval_(S, Env, Input, PosIn, PosNxt, Re), !,             % try S
-	(Re = [] -> R = Rs ; R = [Re|Rs]),                      % don't accumulate empty results
-	seq_eval(Ss, Start, Env, Input, PosNxt, PosOut, Rs).    % loop to next in sequence
-seq_eval([S|_], Start, Env, _Input, PosIn, _PosOut, _R) :-  % S failed, update errorInfo
-	PosIn > Start,  % something consumed in this sequence
-	nb_getval('pPEG:errorInfo',errorInfo(_,_,HWM)),
-	PosIn > HWM,
-	arg(3,Env,FName),  % Env[3] = current rule name from environment
-	nb_linkval('pPEG:errorInfo',errorInfo(FName,S,PosIn)),
-	fail.
+	(eval_(S, Env, Input, PosIn, PosNxt, Re)                   % try S
+	 -> (Re = [] -> R = Rs ; R = [Re|Rs]),                     % S succeed, don't accumulate empty results
+	    seq_eval(Ss, Start, Env, Input, PosNxt, PosOut, Rs)    % loop to next in sequence
+	 ;  PosIn > Start,     % S failed but something consumed in this sequence
+	    nb_getval('pPEG:errorInfo',errorInfo(_,_,HWM)),
+	    PosIn > HWM,       % new high water mark
+	    arg(3,Env,FName),  % Env[3] = current rule name from environment
+	    nb_linkval('pPEG:errorInfo',errorInfo(FName,S,PosIn)),
+	    fail
+	).
 
 
 % rep instruction 
@@ -687,15 +687,13 @@ prolog:message(peg(extension(T,Rem))) -->  % DCG
 %
 % set tracing on named rules
 %
+peg_add_tracing([],Grammar,Grammar) :- !.  % nothing to trace
 peg_add_tracing(TRules,Grammar,GrammarT) :-
-	(TRules = []
-	 -> GrammarT = Grammar                    % short circuit if nothing to trace
-	 ;  (Grammar = [rule(_,_)|_]
-	     ->	duplicate_term(Grammar,GrammarC)  % create duplicate of optimized grammar
-	     ;  GrammarC = Grammar                % unoptimized case copies as needed
-	    ),
-	    add_tracing(TRules,GrammarC,GrammarT)
-	).
+	(Grammar = [rule(_,_)|_]
+	 -> duplicate_term(Grammar,GrammarC)   % create duplicate of optimized grammar
+	 ;  GrammarC = Grammar                 % unoptimized case copies as needed
+	),
+	add_tracing(TRules,GrammarC,GrammarT).
 
 add_tracing([],Grammar,Grammar) :- !.
 add_tracing([Name|Names],Grammar,GrammarT) :- !,
@@ -731,7 +729,7 @@ peg_trace :-
 peg_notrace :-
 	(debugging(pPEG(trace),true)
 	 -> trace_control_(nospy(pPEG:eval_)),
-        nodebug(pPEG(trace))
+	    nodebug(pPEG(trace))
 	 ;  true
 	).
 
