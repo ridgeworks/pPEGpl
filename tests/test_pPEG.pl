@@ -212,6 +212,9 @@ test(esc, R=rule1("\n\r\t\\\u005d")) :-
 test(cws, R=rule1([text("abc"),text("def")])) :-
 	parse_test("rule1 = (text \" \")* text = [a-z]*_space_ = [ \t\n\r?]*", "abc ? def  \t", R, []).
 
+test(ext, R=rule1("x")) :-
+	parse_test("rule1 = <testExt 42> 'x'", "x", R, []).
+
 test(csg_lookup, R=elem([tag("div"), content([text(" abc "), elem([tag("p"), text("par")])])])) :-
 	G={|string||
 	elem    = '<' tag '>' content '</' <@ tag> '>'

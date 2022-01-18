@@ -281,8 +281,9 @@ peg_lookup_previous(Name,Env,Match) :-
 	lookup_match_(Ctxt,RName,Match).
 
 lookup_match_((Matches,Parent),Name,Match) :-
-	(memberchk((Name,Match),Matches)
-	 -> true
+	(memberchk((Name,slice(Input,PosIn,PosOut)),Matches)
+	 -> Len is PosOut-PosIn,                 % construct Match string from slice
+	    sub_string(Input,PosIn,Len,_,Match)
 	 ;  lookup_match_(Parent,Name,Match)     % at root, Parent = [] (see peg_setup_parse_/7)
 	).
 
@@ -351,7 +352,7 @@ eval_(dq(S), Env, Input, PosIn, PosOut, []) :-                  % dq "instructio
 eval_(chs(MatchSet), _Env, Input, PosIn, PosOut, []) :-        % chs "instruction"
 	sub_atom(Input, PosIn, 1, _, R),          % input char, fails if end of Input
 	match_chars(MatchSet,MChars),             % convert Match string to MChars list
-	chars_in_match(MChars,R),                 % character in set
+	chars_in_match(MChars,R,in),              % character in set
 	PosOut is PosIn+1.                        % match succeeded, consume 1 char
 
 eval_(extn(S), Env, Input, PosIn, PosOut, R) :-                % extn "instruction"
@@ -371,8 +372,7 @@ eval_(call_O(rule(Name, Exp)), @(Grammar,WS,_RName,Dep,Ctxt), Input, PosIn, PosO
 	eval_(Exp, @(Grammar,WS,Name,Dep1,([],Ctxt)), Input, PosIn, PosOut, Res),  % with new context
 	(Exp = trace(_)
 	 -> R = Res  % if tracing, already done
-	 ;  Len is PosOut-PosIn,
-	    sub_string(Input,PosIn,Len,_,Match),  % string matched
+	 ;  Match = slice(Input,PosIn,PosOut),  % Input slice matched
 	    % add Match to siblings in context (undo on backtrack)
 	    arg(1,Ctxt,Matches), setarg(1,Ctxt,[(Name,Match)|Matches]),
 	    sub_atom(Name,0,1,_,RType),  % first character of name determines rule type
@@ -406,14 +406,14 @@ eval_(dq_O(Case,Matches), Env, Input, PosIn, PosOut, []) :-     % dq_O "instruct
 
 eval_(chs_O(In,MChars), _Env, Input, PosIn, PosOut, []) :-      % chs_O "instruction"
 	sub_atom(Input, PosIn, 1, _, R),          % input char, fails if end of Input
-	(chars_in_match(MChars,R) -> In = in ; In = notin),  % character in/notin set
+	chars_in_match(MChars,R,In),              % character in/notin set
 	PosOut is PosIn+1.                        % match succeeded, consume 1 char
 
 eval_(extn_O(T), Env, Input, PosIn, PosOut, R) :-               % extn_O "instruction"
 	extn_call(T,Env,Input,PosIn,PosOut,R).
 
 eval_(trace(Rule), Env, Input, PosIn, PosOut, R) :-             % trace "instruction"
-	% start tracing this call
+	% start tracing this rule
 	(debugging(pPEG(trace),true)
 	 -> eval_(call_O(Rule),Env,Input,PosIn,PosOut,R)  % already tracing, just call_O
 	 ;  current_prolog_flag(debug,DF),  % save debug state
@@ -444,7 +444,7 @@ alt_eval([S|Ss], Env, Input, PosIn, PosOut, R) :-
 seq_eval([], _Start, _Env, _Input, PosIn, PosIn, []).
 seq_eval([S|Ss], Start, Env, Input, PosIn, PosOut, R) :-
 	(eval_(S, Env, Input, PosIn, PosNxt, Re)                   % try S
-	 -> (Re = [] -> R = Rs ; R = [Re|Rs]),                     % S succeed, don't accumulate empty results
+	 -> (Re = [] -> R = Rs ; R = [Re|Rs]),                     % S succeeded, don't accumulate empty results
 	    seq_eval(Ss, Start, Env, Input, PosNxt, PosOut, Rs)    % loop to next in sequence
 	 ;  PosIn > Start,     % S failed but something consumed in this sequence
 	    nb_getval('pPEG:errorInfo',errorInfo(_,_,HWM)),
@@ -472,7 +472,7 @@ rep_counts(range([num(StrM),_,num(StrN)]),M,N) :-  % *M..N
 repeat_eval(Max, _Min, Max, _Exp, _Env, _Input, PosIn, PosIn, []) :- !.  % terminate if C=Max
 repeat_eval(C,    Min, Max,  Exp,  Env,  Input, PosIn, PosOut, R) :- 
 	eval_(Exp, Env, Input, PosIn, PosN, Re),
-	PosN  > PosIn, % expressions in loops must consume
+	PosN > PosIn,  % expressions in loops must consume
 	!,
 	C1 is C+1,     % increment count
 	(Re = [] -> R = Rs ; R = [Re|Rs]),  % don't accumulate empty results
@@ -600,17 +600,16 @@ unescape_([Char|Chars],[Char|MChars]) :-
 std_escape_('n','\n').
 std_escape_('r','\r').
 std_escape_('t','\t').
-%%std_escape_('b','\n').
-%%std_escape_('f','\n').
 std_escape_('\\','\\').
 
 hex_value(C,V) :- char_type(C,digit(V)) -> true ; char_type(C,xdigit(V)).
 
 % search for Ch in list of MChars (including ranges)
-chars_in_match([Cl,'-',Cu|MChars],Ch) :- !,                   % range
-	(Cl@=<Ch,Ch@=<Cu -> true ; chars_in_match(MChars,Ch)).
-chars_in_match([Cl|MChars],Ch) :-                             % equivalence
-	(Cl=Ch -> true ; chars_in_match(MChars,Ch)).
+chars_in_match([],_Ch,notin) :- !.                               % EOList, succeed if 'notin'
+chars_in_match([Cl,'-',Cu|MChars],Ch,In) :- !,                   % range
+	(Cl@=<Ch,Ch@=<Cu -> In = in ; chars_in_match(MChars,Ch,In)).
+chars_in_match([Cl|MChars],Ch,In) :-                             % equivalence
+	(Cl=Ch -> In = in ; chars_in_match(MChars,Ch,In)).
 
 
 % id/call instruction
@@ -639,7 +638,10 @@ flatten_(NonList, Tl, [NonList|Tl]).
 % build a ptree from a flattened list of args
 build_ptree([],RType,Match,PName,R) :- !,      % no args, 2 cases
 	(char_type(RType,lower)
-	 -> R =.. [PName,Match]                    % string result
+	 -> Match = slice(Input,PosIn,PosOut),     % string result
+	    Len is PosOut-PosIn,
+	    sub_string(Input,PosIn,Len,_,Arg),
+	    R =.. [PName,Arg]
 	 ;  R =.. [PName,[]]                       % empty args
 	).
 build_ptree([Arg],RType,_Match,_PName,Arg) :-  % single arg
