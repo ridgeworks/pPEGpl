@@ -222,6 +222,13 @@ test(csg_lookup, R=elem([tag("div"), content([text(" abc "), elem([tag("p"), tex
 	tag     = [a-zA-Z]+
 	text    = ~[<]+
 	|}, parse_test(G, "<div> abc <p>par</p></div>", R, []).
+test(csg_lookup, R=elem([tag("div"), content([text(" abc "), elem([tag("p"), text("par")])])])) :-
+	G={|string||
+	elem    = '<' tag '>' content '</' <@ tag> '>'
+	content = (text / elem)*
+	tag     = [a-zA-Z]+
+	text    = ~[<]+
+	|}, parse_test(G, "<div> abc <p>par</p></div>", R, [optimise(false)]).
 test(csg_lookup, R='Raw'([raw("raw string")])) :-
 	G={|string||
 	Raw   = 'r' _fence '"' raw '"' <csg_pPEGxt:@ _fence>

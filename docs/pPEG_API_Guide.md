@@ -381,8 +381,7 @@ The implementation of the `@` extension can be found in `library(csg_pPEGxt)`:
 ```
 @(Name,Env,Input,PosIn,PosOut,[]) :-
     (peg_lookup_previous(Name,Env,Match)
-     -> string_length(Match,Len),
-        sub_string(Input,PosIn,Len,_,Match),             % same as previous result
+     -> sub_string(Input,PosIn,Len,_,Match),             % same as previous result
         PosOut is PosIn+Len
      ;  PosOut = PosIn                                   % no previous, match nothing
     ).
@@ -487,8 +486,8 @@ Hopefully these few examples demonstrate how a generic `@` extension can address
 
 :- use_module(library(strings),[string/4]).    % for quasi-quoted strings
 :- use_module(library(debug)).                 % for tracing (see peg_trace/0)
-:- use_module(library(option),[option/3]).     % for for option list processing
-:- use_module(library(pcre),[re_matchsub/4]).  % regular expression support
+:- use_module(library(option),[option/3]).     % for option list processing
+:- use_module(library(pcre),[re_matchsub/4]).  % regular expression support (for error & trace output)
 ```
 #### peg_compile(*+String, ?Grammar*)
 Succeeds if *String* is valid *pPEG* source text and can be compiled to *Grammar*. *Grammar* is either a variable which will be unified with the grammar term usable when calling `peg_parse`, or is the name of the grammar (an atom) which will be used to retrieve the grammar by `peg_parse`. A `peg_compile` failure will be accompanied by an `informational` message, and is normally the result of invalid *pPEG* source. In addition, `peg_compile` may succeed but output `warning` messages indicating anomalies in the grammar which may cause unexpected results when the grammar is used in parsing. These warnings should be adressed while the grammar is in development.

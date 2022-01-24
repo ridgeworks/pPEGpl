@@ -34,8 +34,8 @@
 
 :- use_module(library(strings),[string/4]).    % for quasi-quoted strings
 :- use_module(library(debug)).                 % for tracing (see peg_trace/0)
-:- use_module(library(option),[option/3]).     % for for option list processing
-:- use_module(library(pcre),[re_matchsub/4]).  % regular expression support
+:- use_module(library(option),[option/3]).     % for option list processing
+:- use_module(library(pcre),[re_matchsub/4]).  % regular expression support (for error & trace output)
 
 %
 % the "standard" pPEG grammar source for bootstrapping and reference, e.g.,
@@ -288,7 +288,7 @@ lookup_match_((Matches,Parent),Name,Match) :-
 	).
 
 %
-% peg VM implementation - 9 native plus 6 "optimized" instructions (plus trace)
+% peg VM implementation - 9 native plus 5 "optimized" instructions (plus trace)
 %
 eval_(id(Name), Env, Input, PosIn, PosOut, R) :-                % id "instruction"
 	atom_string(PName,Name),                     % map to call_O(Rule), requires atom Name
@@ -356,7 +356,7 @@ eval_(chs(MatchSet), _Env, Input, PosIn, PosOut, []) :-        % chs "instructio
 	PosOut is PosIn+1.                        % match succeeded, consume 1 char
 
 eval_(extn(S), Env, Input, PosIn, PosOut, R) :-                % extn "instruction"
-	extn_pred(S,T),
+	(string(S) -> extn_pred(S,T) ; T = S),    % avoid extra work if already optimised
 	extn_call(T,Env,Input,PosIn,PosOut,R).
 
 % additional instructions produced by optimizer
@@ -408,9 +408,6 @@ eval_(chs_O(In,MChars), _Env, Input, PosIn, PosOut, []) :-      % chs_O "instruc
 	sub_atom(Input, PosIn, 1, _, R),          % input char, fails if end of Input
 	chars_in_match(MChars,R,In),              % character in/notin set
 	PosOut is PosIn+1.                        % match succeeded, consume 1 char
-
-eval_(extn_O(T), Env, Input, PosIn, PosOut, R) :-               % extn_O "instruction"
-	extn_call(T,Env,Input,PosIn,PosOut,R).
 
 eval_(trace(Rule), Env, Input, PosIn, PosOut, R) :-             % trace "instruction"
 	% start tracing this rule
@@ -478,7 +475,7 @@ repeat_eval(C,    Min, Max,  Exp,  Env,  Input, PosIn, PosOut, R) :-
 	(Re = [] -> R = Rs ; R = [Re|Rs]),  % don't accumulate empty results
 	repeat_eval(C1, Min, Max, Exp, Env, Input, PosN, PosOut, Rs).
 repeat_eval(C,    Min,_Max, _Exp, _Env, _Input, PosIn, PosIn, []) :-  % eval failed
-	C >= Min.        % C greater than or equal Min, else fail
+	C >= Min.      % C greater than or equal Min, else fail
 
 
 % sq instruction (also dq)
@@ -493,18 +490,18 @@ literal_match_(S,Match) :-
 % "" component matches whitespace, anything else does literal match
 dq_match_list("",[]) :- !.
 dq_match_list(S,Ms) :-
-	split_string(S," "," ",RawMs),   % splits on space(s) and removes all space characters
-	RawMs \= [""], !,                % more than just space characters
+	split_string(S," "," ",RawMs),      % splits on space(s) and removes all space characters
+	RawMs \= [""], !,                   % more than just space characters
 	% conditionally restore leading space indicator
 	(sub_string(S,0,1,_," ") -> Ms = [""|Ms1] ;  Ms = Ms1),
-	sub_string(S,_,1,0,Trl),         % trailing space ?
-	dq_match_list_(RawMs,Trl,Ms1).   % RawMs has at least 1 non-empty string
-dq_match_list(_S,[""]).              % split yields nothing but whitespace.
-	
-dq_match_list_([M1,M2|Ms],Trl,[M1,""|Ms1])	:-  !,   
+	sub_string(S,_,1,0,Trl),            % trailing space ?
+	dq_match_list_(RawMs,Trl,Ms1).      % RawMs has at least 1 non-empty string
+dq_match_list(_S,[""]).                 % split yields nothing but whitespace.
+
+dq_match_list_([M1,M2|Ms],Trl,[M1,""|Ms1]) :- !,
 	dq_match_list_([M2|Ms],Trl,Ms1).
 dq_match_list_([M1]," ",[M1,""]) :- !.  % trailing space indicator
-dq_match_list_(M,_,M).               % no trailing ws
+dq_match_list_(M,_,M).                  % no trailing ws
 
 % Match input against a dq match list (see below)
 % Grammar required in case there's user defined whitespace
@@ -798,7 +795,6 @@ peg_inst_type(dq_O(_,_),terminal).
 peg_inst_type(chs(_),terminal).
 peg_inst_type(chs_O(_,_),terminal).
 peg_inst_type(extn(_),terminal).
-peg_inst_type(extn_O(_),terminal).
 peg_inst_type(id(_),notrace).     % not traced, caught in call_O
 peg_inst_type(call_O(_),call).
 peg_inst_type(trace(_),notrace).  % not traced, caught in call_O
@@ -839,7 +835,7 @@ peg_trace_msg(postInc, Msg, [Cursor|Args]) :-
 	nb_linkval('pPEG:indent',NxtIndent).
 peg_trace_msg(preDec, Msg, [Cursor|Args]) :-
 	nb_getval('pPEG:indent', Indent),
-	sub_string(Indent,_,_,3,NxtIndent),         % subtract 3 chars from end of current indent
+	sub_string(Indent,0,_,3,NxtIndent),         % subtract 3 chars from end of current indent
 	debug_peg_trace(Msg,[Cursor,NxtIndent|Args]),
 	nb_linkval('pPEG:indent',NxtIndent).
 peg_trace_msg(indent, Msg, [Cursor|Args]) :-
@@ -895,8 +891,7 @@ vm_instruction(chs_O(In,MChars), Is) :-
 	unescape_std(MStr,S),
 	unescape_string(S,"]","\\u005d",S1),
 	atomics_to_string([Pfx,"[",S1,"]"],Is).
-vm_instruction(extn(Is), Is).
-vm_instruction(extn_O(Ext), Is) :-
+vm_instruction(extn(Ext), Is) :-
 	(string(Ext)
 	 -> atomics_to_string(['<',Ext,'>'],Is)
 	 ;  Ext =.. [Func,StringArg],  % Sexp format
@@ -1026,15 +1021,14 @@ optimize_exp(dq(QS), _RDefs, I) :-
 	dq_instruction(Matches,Case,I),
 	!.
 
-optimize_exp(extn(S), _RDefs, extn_O(T)) :-    % extn "instruction"
-	extn_pred(S,T).
+optimize_exp(extn(S), _RDefs, extn(T)) :-      % extn "instruction"
+	(string(S) -> extn_pred(S,T) ; T = S).
 
 optimize_exp(call_O(Rule), _RDefs, call_O(Rule)).                 % already optimized?
 optimize_exp(rep_O(Exp, Min, Max), _RDefs, rep_O(Exp, Min, Max)). % already optimized?
 optimize_exp(sq_O(C,M), _RDefs, sq_O(C,M)).                       % already optimized?
 optimize_exp(dq_O(C,M), _RDefs, dq_O(C,M)).                       % already optimized?
 optimize_exp(chs_O(M), _RDefs, chs_O(M)).                         % already optimized?
-optimize_exp(extn_O(T), _RDefs, extn_O(T)).                       % already optimized?
 % Note: trace instructions don't appear in static grammar.
 
 optimize_exp_list([],_RDefs,[]).
