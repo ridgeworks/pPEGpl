@@ -893,9 +893,13 @@ vm_instruction(chs_O(In,MChars), Is) :-
 	atomics_to_string([Pfx,"[",S1,"]"],Is).
 vm_instruction(extn(Ext), Is) :-
 	(string(Ext)
-	 -> atomics_to_string(['<',Ext,'>'],Is)
-	 ;  Ext =.. [Func,StringArg],  % Sexp format
-	    (Func = ? -> Is=[] ; atomics_to_string(['<',Func,' ',StringArg,'>'],Is))
+	 -> Is = Ext                              % native string format
+	 ;  (Ext = Mod:Pred
+	     -> Pred =.. [Func,StringArg],        % module qualified predicate
+	        atomics_to_string(['<',Mod,':',Func,' ',StringArg,'>'],Is)
+	     ;  Ext =.. [Func,StringArg],         % plain predicate
+	        atomics_to_string(['<',Func,' ',StringArg,'>'],Is)
+	    )
 	).
 vm_instruction(trace(Rule), Is) :-
 	vm_instruction(call_O(Rule), Is).
