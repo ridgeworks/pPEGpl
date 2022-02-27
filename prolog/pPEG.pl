@@ -168,7 +168,7 @@ peg_compile(Src, GrammarSpec, OptionList) :-  % create parser, optionally optimi
 
 %
 % peg_parse/3 :use a Peg grammar to parse an Input string to a ptree Result
-% peg_parse/5 :parse/3 with Match string and Options	
+% peg_parse/5 :parse/3 with Match string and Options
 %
 peg_parse(GrammarSpec, Input, Result) :-
 	peg_parse(GrammarSpec, Input, Result, _Residue, []).
@@ -909,15 +909,15 @@ vm_instruction_list([Exp|Exps],[Is|LIs]) :-
 	vm_instruction(Exp,Is),
 	vm_instruction_list(Exps,LIs).
 
-vm_rep_sfx(sfx(ROp),ROp).
-vm_rep_sfx(num(StrN),ROp) :- atomics_to_string(["*",StrN],ROp).
-vm_rep_sfx(range([num(StrN),_]),ROp) :- atomics_to_string(["*",StrN,".."],ROp).
-vm_rep_sfx(range([num(StrM),_,num(StrN)]),ROp) :- atomics_to_string(["*",StrM,"..",StrN],ROp).
+vm_rep_sfx(sfx(ROp), ROp).
+vm_rep_sfx(num(StrN), ROp) :-                      atomics_to_string(["*",StrN],ROp).
+vm_rep_sfx(range([num(StrN),_]), ROp) :-           atomics_to_string(["*",StrN,".."],ROp).
+vm_rep_sfx(range([num(StrM),_,num(StrN)]), ROp) :- atomics_to_string(["*",StrM,"..",StrN],ROp).
 
 unescape_string(Sin,Esc,Usc,Sout) :-
 	split_string(Sin,Esc,"",L),
 	atomics_to_string(L,Usc,Sout).
-	
+
 unescape_std(Sin,Sout) :-
 	string_chars(Sin,CharsIn),
 	escape_chars(CharsIn,CharsOut),
