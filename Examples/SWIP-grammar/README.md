@@ -6,23 +6,20 @@ In addition to the grammar, a "parser" program is included to map the ptree resu
 
 #### Module `pl_grammar`
 
-This module just exports a string containing the `pPEG` definition of the SWI-Prolog syntax as a string. So typical usage to create a pPEG grammar term would be:
+This module exports the grammar term defined by the `pPEG` specification of the SWI-Prolog syntax, so it can be used directly in a `peg_parse` query:
 ```
-?- prolog_grammar(S), peg_compile(S,plg).
-```
-Parsing a simple term:
-```
-?- peg_parse(plg,"f(X).",R).
+?- prolog_grammar(Plg), peg_parse(Plg,"f(X).",R).
 R = 'Prolog'(['Compound'([atom("f"), var("X")])]).
 ```
 The language that is recognized by the grammar consists of one or more Prolog terms, each terminated by the traditional "full stop followed by white space" Prolog terminator.
 ```
 	Prolog = " " (expr _eox)+
-	_eox   = " ." (_ws+ / !(~[]))      # end of expression: '.' followed by whitespace or eos
+	_eox   = " ." (_ws+ / _eos)      # end of expression: '.' followed by whitespace or eos
+	_eos   = !(~[])                  # end of input string
 ```
 Note that the terms are not restricted to clausal terms, so non-programs are valid input:
 ```
-﻿?- peg_parse(plg,"[H|T]. 42.",R).
+?- prolog_grammar(Plg), peg_parse(Plg,"[H|T]. 42.",R).
 R = 'Prolog'(['List'([var("H"), 'Tail'([var("T")])]), integer("42")]).
 ```
 Currently only 8-bit characters are supported for variable names and unquoted atoms; it would be fairly straight forward, albeit tedious, to extend this to cover a larger Unicode character set.
@@ -47,11 +44,11 @@ And since expressions are limited when used in compound term arguments and lists
 
 Note that this parser is not a compiler or loader so to be recognized by the parser, any operator must be defined before a parse is done. Directives, including operator definitions, are just expressions to be parsed.
 
-Now suppose we wanted to change out grammar so that improper lists (lists which don't terminate with a list and do not pass the `is_list/1` test) generate parse errors. This can be easily done by changing the `Tail` rule to:
+Now suppose we wanted to change our grammar to add the sensible restriction (probably should have been enforced by ISO) that improper lists (lists which don't terminate with a list and do not pass the `is_list/1` test) generate parse errors. This can be easily done by changing the `Tail` rule to:
  ```
  Tail   = " | " (var / List / _mtList)          # insist on a proper list
  ```
-so only a variable or a list are permitted after the vertical bar. This is probably a restriction that should have been enfoced as far back as the ISO standard since any violation should probably have been written with a comma rather than the bar. As it turns out, there don't appear to be a lot of code examples where this restriction bites; there are only 3 files in the `swipl library` (top level) or `boot` directories which violate this rule. (Of course, it's still possible to create one dynamically by binding a `Tail` variable to a term other than a list.)
+so only a variable or a list are permitted after the vertical bar. (The intent was probably to use a comma rather than a bar.)  As it turns out, there don't appear to be a lot of code examples where this restriction bites; there are only 3 files in the `swipl library` (top level) and `boot` directories which violate this rule. (Of course, it's still possible to create one dynamically by binding a `Tail` variable to a term other than a list.)
 
 #### Module `pl_parser`
 

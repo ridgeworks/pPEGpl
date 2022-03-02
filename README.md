@@ -179,7 +179,9 @@ This also isn't a particularly practical example; the JSON parser from `library(
 
 #### A Formal Grammar for SWI-Prolog Syntax
 
-Fo a more extensive example, see the `Examples` directory fo a formal specification of the SWI-Prolog syntax (current as of March, 2022), including a small semantic analyser which converts the *ptree* result to the corresponding Prolog terms. This has been fairly extensively tested including all files in the `swipl boot` directory and the (almost 200) top level files in the `library`. This parser is not intended to be used as an alternative to the builtin parser, but having a complete, concise, and testable specification of the SWIP syntax is valuable in its own right (not to mention its value as documentation).
+For a more extensive example, see the `Examples` directory fo a formal specification of the SWI-Prolog syntax (current as of March, 2022), including a small semantic analyser which converts the *ptree* result to the corresponding Prolog terms. This has been fairly extensively tested including all files in the `swipl boot` directory and the (almost 200) top level files in the `library`. The biggest obstacle to its use is ensuring the the necessary operators are defined prior to parsing a file. (It's just a parser so only pre-existing operators are recognized.)
+
+This parser is not intended to be used as an alternative to the builtin parser, but having a complete, concise, and testable specification of the SWIP syntax is valuable in its own right (not to mention its intrinsic value as documentation).
 
 #### `pPEG` Performance
 
