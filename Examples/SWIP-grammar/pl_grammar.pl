@@ -24,18 +24,21 @@
  *	SOFTWARE.
  */
 :- module(pl_grammar, [prolog_grammar/1]).
+
 /* Usage, e.g.,
-?- prolog_grammar(F),peg_compile(F,plg).
+?- prolog_grammar(PG), peg_parse(PG,"X is exp(42).",R).
+
+PG = 'Peg`([ ... ]),
+R = 'Prolog'([expr([var("X"), 'InfixOp'([op("is")]), 'Compound'([atom("exp"), integer("42")])])]).
+
+Note: you usually don't want the grammar term 'PG' in a toplevel query - it's quite verbose.
 */
 
-:- use_module(library(strings),[string/4]).    % for quasi-quoted strings
-:- current_module(pPEG) -> true  ; use_module(library(pPEG),[peg_lookup_previous/3]).
+prolog_grammar({|pPEG||
 
-% Note that this grammar does not recognise an improper list (See rule for 'Tail').
-prolog_grammar({|string||
-
-	Prolog = " " (expr _eox)+
-	_eox   = " ." (_ws+ / !(~[]))      # end of expression: '.' followed by whitespace or eos
+	Prolog = " " (expr _eox)+        # one or more expressions properly terminated
+	_eox   = " ." (_ws+ / _eos)      # end of expression: '.' followed by whitespace or eos
+	_eos   = !(~[])                  # end of input string
 	
 	expr   = PrefixOp " " (&PrefixOp expr / !InfixOp expr)
 	       / term " " ( InfixOp " " expr " " / PostfixOp " " )*
@@ -48,7 +51,7 @@ prolog_grammar({|string||
 	term   = Pexpr         # (expr)
 	       / Compound      # f(x,y)
 	       / List          # [X,Y|Z]
-	       / QQuote        # {|syntax||content| }
+	       / QQuote        # {|syntax||content| }  - can't have qq terminator in a comment
 	       / Curly         # {expr}
 	       / var           # X
 	       / string        # "xyz"
@@ -61,10 +64,10 @@ prolog_grammar({|string||
 	Compound = atom "( " (arg (" , " arg)*)? " )"
 	
 	List   = "[ " (elem (" , " elem)* Tail?) " ]"
-	Tail   = " | " (var / List / _mtList)          # insist on a proper list
+	Tail   = " | " elem                            # improper lists allowed
 	
-	QQuote = "{| " expr " ||" qcontent '|' '}'     # can't have '| }' in quasi-quote grammar
-	qcontent  = (!('|' '}') ~[])*
+	QQuote = "{| " expr " ||" qcontent '|''}'      # can't have qq terminator in the grammar
+	qcontent = ~('|''}')*                          # anything but qq terminator
 	
 	Curly  = "{ " expr " }"
 	
@@ -129,12 +132,14 @@ prolog_grammar({|string||
 	_ws       = [ \t-\r]+                                  # [ \t\n\v\f\r]
 	          / '%' ~[\n\r]*                               # line comment
 	          / _blkcmt                                    # block comment
-	_blkcmt  = '/*' (~[/*] / _blkcmt / !('*/')~[])* '*/'
+	_blkcmt  = '/*' (~[/*] / _blkcmt / ~('*/'))* '*/'
 
 |}).
 
+:- current_module(pPEG) -> true  ; use_module(library(pPEG),[peg_lookup_previous/3]).
+
 % extension to check to see if previous 'op' match is operator of desired class (infix, prefix, or postfix)
-% precedence/associativity handled in subsequent semantic analysis
+% precedence/associativity handled later in semantic analysis
 testOp(Class,Env,_Input,PosIn,PosIn,[]) :-
 	peg_lookup_previous('op',Env,SOp),  % previous string match from op rule
 	sub_atom(SOp,0,1,_,C),
@@ -143,11 +148,11 @@ testOp(Class,Env,_Input,PosIn,PosIn,[]) :-
 	op_type(Assoc,Class),
 	!.
 
-string_to_op('[',SOp,[]) :-         % block quotes
+string_to_op('[',SOp,[]) :-         % block quotes operator, e.g., X[2]
 	sub_atom(SOp,_,1,0,']'), !.
-string_to_op('{',SOp,{}) :-         % curly quotes
+string_to_op('{',SOp,{}) :-         % curly quotes operator
 	sub_atom(SOp,_,1,0,'}'), !.
-string_to_op(_,SOp,Op) :- 
+string_to_op(_,SOp,Op) :-           % normal atom operator
 	atom_string(Op,SOp).
 
 % largely copied from prolog_operator.pl

@@ -29,13 +29,18 @@
 	 peg_parse/3,           % use a pPEG grammar to parse an Input string to a ptree Result
 	 peg_parse/5,           % as above with unmatched residue and option list
 	 peg_grammar/1,         % pPEG grammar source
-	 peg_lookup_previous/3  % used by CSG extensions to lookup previous matches
+	 peg_lookup_previous/3, % used by CSG extensions to lookup previous matches
+	 pPEG/4                 % quasi-quotation hook for pPEG
 	]).
 
 :- use_module(library(strings),[string/4]).    % for quasi-quoted strings
 :- use_module(library(debug)).                 % for tracing (see peg_trace/0)
 :- use_module(library(option),[option/3]).     % for option list processing
-:- use_module(library(pcre),[re_matchsub/4]).  % regular expression support (for error & trace output)
+:- use_module(library(pcre),[re_matchsub/4]).  % uses a regular expression for error & trace output
+:- use_module(library(quasi_quotations), [     % pPEG as quasi-quotation
+    quasi_quotation_syntax/1, 
+    with_quasi_quotation_input/3
+]).
 
 %
 % the "standard" pPEG grammar source for bootstrapping and reference, e.g.,
@@ -89,7 +94,7 @@ boot_grammar_def('Peg'([
 
 	rule([id("sfx"),chs("[*+?]")]),
 	rule([id("pfx"),chs("[!&~]")])
-])).
+], _=_)).  % no substitution required
 
 /* Corresponds to:
 peg_bootstrap_grammar({|string||
@@ -146,6 +151,15 @@ bootstrap_grammar :-
 	peg_compile(PegSrc,pPEG,[optimise(true)]).  % if successful, will overwrite boot parser
 
 %
+% support pPEG grammar in quasi-quotation (compiles to a grammar term, Args are options)
+%
+:- quasi_quotation_syntax(pPEG).
+
+pPEG(Content, Args, _Binding, Grammar) :-
+	with_quasi_quotation_input(Content, Stream, read_string(Stream, _, String)),
+	peg_compile(String,Grammar,Args).  % Args are compiler options
+
+%
 % peg_compile/2, peg_compile/3 :create a grammar from a source string
 %
 peg_compile(Src, GrammarSpec) :-              % create an unoptimized parser (a ptree)
@@ -155,16 +169,23 @@ peg_compile(Src, GrammarSpec, OptionList) :-  % create parser, optionally optimi
 	peg_parse(pPEG, Src, Ptree, _, OptionList),
 	option_value(optimise(Opt),OptionList,true),
 	(Opt = true -> optimize_peg(Ptree,Grammar) ; Grammar=Ptree),
-	(Grammar = GrammarSpec
+	term_factorized(Grammar,'Peg'(Rules),Subs),  % deconstruct result to an acyclic grammar and substitution list
+	reduce_subs(Subs,LHSs,RHSs),                 % generate single unification expression
+	LHS =.. [$|LHSs], RHS =.. [$|RHSs], 
+	('Peg'(Rules,LHS=RHS) = GrammarSpec
 	 -> true                   % Grammar Spec can be Grammar
 	 ;  (atom(GrammarSpec)     % or name of a Grammar
 	     -> atomic_concat('pPEG:$',GrammarSpec,GKey),
-	        nb_setval(GKey,Grammar)
+	        nb_setval(GKey,'Peg'(Rules,LHS=RHS))
 	     ;  current_prolog_flag(verbose,GVrbse),
 	        option_value(verbose(Vrbse),OptionList,GVrbse), % default = global setting
 	        peg_fail_msg(peg(argError('GrammarSpec',GrammarSpec)),Vrbse)
 	    )
 	).
+
+reduce_subs([],[],[]).
+reduce_subs([LHS=RHS|Subs],[LHS|LHSs],[RHS|RHSs]) :-
+	reduce_subs(Subs,LHSs,RHSs).
 
 %
 % peg_parse/3 :use a Peg grammar to parse an Input string to a ptree Result
@@ -213,9 +234,9 @@ peg_setup_parse_(GrammarSpec,Input,Vrbse,TRules,GName,@(Grammar,WS,[],0,([],[]))
 	 -> true
 	 ;  peg_fail_msg(peg(argError('Input',Input)),Vrbse)
 	),
-	(GrammarSpec='Peg'(Grammar0)
+	(GrammarSpec='Peg'(Grammar0,S=S)  % unifies LHSs and RHSs in substitution term
 	 -> true
-	 ; (atom(GrammarSpec), atomic_concat('pPEG:$',GrammarSpec,GKey), nb_current(GKey,'Peg'(Grammar0))
+	 ; (atom(GrammarSpec), atomic_concat('pPEG:$',GrammarSpec,GKey), nb_current(GKey,'Peg'(Grammar0,S=S))
 	    -> true
 	    ;  peg_fail_msg(peg(argError('Grammar',GrammarSpec)),Vrbse)
 	   )

@@ -30,48 +30,47 @@
 	                         %   restricted to clauses.
 
 :- current_module(pPEG) -> true ; use_module(library(pPEG)).
+:- current_module(pl_grammar).
 
 :- multifile prolog:message/1.
 
 /* Caveats:
-- no dynamic operator definitions (or other directive execution)
+- no dynamic operator definitions (it's a parser, not a compiler/loader)
+- if the quasi-quotation syntax is defined, the named QQ parser is invoked to generate the result,
+	otherwise a term of the form '$quasi_quotation'(SyntaxName,Content,SyntaxArgs,VariableNames) is produced
+- no support for generating dict expressions, including functional notation - left as Prolog term
+- small cheat in that read_term_from_atom/3 is to convert "number" strings to Prolog numbers
 - parser maintains rather odd syntax restrictions for NaN values ??
-- no support for generating:
- 	quasi-quoted content - generates term '$quasi_quotation'(As_string_data)
- 	dict expressions, including functional notation - left as Prolog term
-- small cheat in that read_term_from_atom/3 is to convert "number"s to Prolog numbers
 */
-
-init_pl_parser :-
-	(current_module(pl_grammar)
-	 -> prolog_grammar(P),
-	    peg_compile(P,plg)
-	 ;  print_message(informational, prolog_parser(no_grammar))
-	).
-
-prolog:message(prolog_parser(no_grammar)) -->  % DCG
-	[ "pl_grammar.pl must be loaded before pl_parser.pl ." ].
 
 % Exports string_termList/2
 string_termList(String,Terms) :-
-	peg_parse(plg,String,'Prolog'(Nodes)),
+	prolog_grammar(PG),  % from pl_grammar
+	peg_parse(PG,String,'Prolog'(Nodes)),
 	nodes_terms(Nodes,Terms).
 
 nodes_terms([],[]).
 nodes_terms([Node|Nodes],[Term|Terms]) :-
 	node_to_term(Node,[],VarList,Term),
-	name_vars_(VarList),
-	term_singletons(Term,Singles), name_singles_(Singles),
+	% Comment out the next two lines to preserve variables:
+	name_vars_(VarList),                                   % binds named vars to names
+	term_singletons(Term,Singles), name_singles_(Singles), % in effect, binds anonymous to '_'
 	nodes_terms(Nodes,Terms).
 
+% utility predicates for managing list of variable names
 name_vars_([]).
-name_vars_([Name = '$VAR'(Atom)|VarList]) :- 
-	atom_string(Atom,Name), 
+name_vars_([Name = '$VAR'(Name)|VarList]) :-
 	name_vars_(VarList).
 
 name_singles_([]).
 name_singles_(['$VAR'('_')|Singles]) :-
 	name_singles_(Singles).
+
+% merge Var=Name lists
+mergeNamedVars([],_Vars).
+mergeNamedVars([V|Vs],Vars) :-
+	memberchk(V,Vars),
+	mergeNamedVars(Vs,Vars).
 
 %% node_to_term(Node,Term) - convert a ptree node to a native prolog term
 node_to_term('Pexpr'([Expr]), Vars, NxtVars, Term) :- !,
@@ -91,10 +90,17 @@ node_to_term('Curly'([Arg]), Vars, NxtVars, Term) :- !,
 	node_to_term(Arg,Vars,NxtVars,Exp),
 	Term =.. ['{}',Exp].
 node_to_term('QQuote'([SynExp,qcontent(Content)]), Vars, NxtVars, Term) :- !,
-	node_to_term(SynExp,[],VariableNames,Syntax),
-	Syntax =.. [SyntaxName|SyntaxArgs],
-	Term = '$quasi_quotation'(SyntaxName,Content,SyntaxArgs,VariableNames),
-	node_to_term(SynExp, Vars, NxtVars, Syntax).  % just reprocess to get NXtVars
+	node_to_term(SynExp,Vars,NxtVars,Syntax),
+	term_string(Syntax,QQsyntax,[variable_names(NxtVars)]),
+	atomics_to_string(['{|',QQsyntax,'||',Content,'|}'],QQuote),
+	(catch(term_string(Term,QQuote,[variable_names(VarNames)]),
+	       error(syntax_error(unknown_quasi_quotation_syntax(_,_)), _),
+	       fail
+	      )
+	 -> mergeNamedVars(VarNames,NxtVars)
+	 ;  Syntax =.. [SyntaxName|SyntaxArgs], % no defined handler - generate a QQ definition
+	    Term = '$quasi_quotation'(SyntaxName,Content,SyntaxArgs,NxtVars)
+	).
 node_to_term(atom(Raw), Vars, Vars, Atom) :- !,
 	(sub_string(Raw,0,1,_,"'")        % strip outer quotes if present
 	 -> sub_string(Raw,1,_,1,Raw1),   % if quoted process escapes
@@ -126,9 +132,11 @@ node_to_term(float(String), Vars, Vars, Num) :- !,
 	string_number_(String,Num). 
 node_to_term(var("_"), Vars, Vars, _Var) :- !.  % anonymous var
 node_to_term(var(String), Vars, NxtVars, Var) :- !,
-	memberchk(String = Var, Vars)
+	atom_string(Name,String),
+	(memberchk(Name = Var, Vars)
 	 -> NxtVars = Vars                          % repeat Var
-	 ;  NxtVars = [String = Var|Vars].          % new non-anonymous var
+	 ;  NxtVars = [Name = Var|Vars]             % new non-anonymous var
+	).
 node_to_term(arg(Expr), Vars, NxtVars, Term) :- !,  % 'arg' is equivalent to 'expr'
 	node_to_term(expr(Expr), Vars, NxtVars, Term).
 node_to_term(elem(Expr), Vars, NxtVars, Term) :- !,  % 'elem' is equivalent to 'expr'
@@ -245,7 +253,9 @@ octal_value(C,V) :- char_type(C,digit(V)), 0 =< V, V =< 7.
 skip_layout_([Char|Chars],MChars) :-
 	char_type(Char,space) -> skip_layout_(Chars,MChars) ; MChars = [Char|Chars].
 
-% expression utility: flatten to list of op definitions and values
+% expression utility: flatten expr, arg and elem's to a list of op definitions and values
+% PrefixOp, InfixOp, and PostfixOp mapped to op/3 term; all others left as is
+% Note 'op' nodes in ptree are removed so no conflict with operand node values.
 flatten_exp_([],List,List).
 flatten_exp_([E|Ex],LIn/[Op|Ts],LOut) :- 
 	opDef(E,Op), !, 
@@ -264,7 +274,7 @@ opDef('PrefixOp'([OpTerm]),op(P,A,OpVal)) :-
 	term_op(OpTerm,Op,OpVal),
 	current_op(P,A,Op),
 	sub_atom(A,0,1,1,'f').  % f_ 
-opDef('InfixOp'([OpTerm]),op(P,A,OpVal)) :- 
+opDef('InfixOp'([OpTerm]),op(P,A,OpVal)) :-
 	term_op(OpTerm,Op,OpVal),
 	current_op(P,A,Op),
 	sub_atom(A,1,1,1,'f').  % _f_  
@@ -296,7 +306,7 @@ build_term_([V, op(_P,_A,Op)], VarsIn, VarsOut, Term) :-                    % si
 	reduce_term_(Op, [Term1], NxtVars, VarsOut, Term).
 
 build_term_([op(P1,A1,Op1), op(P2,A2,Op2)|Etc], VarsIn, VarsOut, Term) :-   % prefix prefix
-	op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), right), 
+	op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), right),
 	!,
 	build_term_([op(P2,A2,Op2)|Etc], VarsIn, VarsNxt, Term1),
 	reduce_term_(Op1, [Term1], VarsNxt, VarsOut, Term).
@@ -330,7 +340,7 @@ build_term_([V1, op(_P1,_A1,Op1), V2], VarsIn, VarsOut, Term) :-            % si
 	reduce_term_(Op1, [Term1,Term2], NxtVars2, VarsOut, Term).
 
 build_term_([V1, op(P1,A1,Op1), V2, op(P2,A2,Op2)|Etc], VarsIn, VarsOut, Term) :-  % infix, infix/postfix
-	op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), Ass), 
+	op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), Ass),
 	!,
 	(Ass = left
 	 -> build_term_([V1, op(P1,A1,Op1), V2], VarsIn, NxtVars, Vterm),
@@ -422,5 +432,3 @@ op_associativityEq(yfx,yf,left).
 % Pattern: postfix postfix
 op_associativityEq(xf,yf,left).
 op_associativityEq(yf,yf,left).
-
-:- initialization(init_pl_parser,now).
