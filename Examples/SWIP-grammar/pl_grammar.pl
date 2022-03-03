@@ -119,7 +119,7 @@ prolog_grammar({|pPEG||
 	               )
 	
 	# operator expressions - in each case match 'op' then 
-	#   test for comaptible definition using extension <testOp>
+	#   test for compatible definition using extension <testOp>
 	PrefixOp  = !('-' [0-9]) op <pl_grammar:testOp prefix> # '-' before number not prefix
 	InfixOp   =              op <pl_grammar:testOp infix>
 	PostfixOp =              op <pl_grammar:testOp postfix>
@@ -163,4 +163,3 @@ op_type(xfy, "infix").
 op_type(yfx, "infix").
 op_type(xf,  "postfix").
 op_type(yf,  "postfix").
-

@@ -48,7 +48,7 @@ Now suppose we wanted to change our grammar to add the sensible restriction (pro
  ```
  Tail   = " | " (var / List / _mtList)          # insist on a proper list
  ```
-so only a variable or a list are permitted after the vertical bar. (The intent was probably to use a comma rather than a bar.)  As it turns out, there don't appear to be a lot of code examples where this restriction bites; there are only 3 files in the `swipl library` (top level) and `boot` directories which violate this rule. (Of course, it's still possible to create one dynamically by binding a `Tail` variable to a term other than a list.)
+so only a variable or a list are permitted after the vertical bar. (The intent was probably to use a comma rather than a bar.)  As it turns out, there don't appear to be a lot of code examples where this restriction bites; there are only 3 files in the `swipl library` (top level) and `boot` directories which violate this rule. (Of course, it's still possible to create one dynamically by binding a `Tail` variable to a term other than a list, but that's not a restriction a parser can enforce.)
 
 #### Module `pl_parser`
 

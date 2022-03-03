@@ -8,7 +8,7 @@ The name *pPEG* stands for portable *PEG*, and *PEG* is an acronym for "Parsing 
 
 Unlike many grammar support systems that generate source code for a target language which gets included in application source, *pPEG*, like regular expressions, uses a direct execution model. The source for a *pPEG* grammar is just a string in the host language which is "compiled" at runtime to a grammar object. This grammar object can then be used to parse input text to produce an instance of a *ptree*. (Analogous operations in the SWI-Prolog regular expression [`library(pcre)`][swip-pcre] would be `re_compile/3` and `re_matchsub/4`.)
 
-While the source of a *pPEG* grammar is language independent, the concrete structure of *ptree*'s and the functions (or predicates) used to compile grammars and use them to parse text, are specified in a language dependent API. The focus of this document is the *pPEG* API implemented in the pack/module `pPEG` for SWI-Prolog. For information on how to write *pPEG* grammars in general, see [pPEG repo][pPEGrepo]. For numerous examples of grammars specified in ANTLR, a popular grammar system (not *PEG* based), see [ANTLR Examples](https://github.com/antlr/grammars-v4).
+While the source of a *pPEG* grammar is language independent, the concrete structure of *ptree*'s and the functions (or predicates) used to compile grammars and use them to parse text, are specified in a language dependent API. The focus of this document is the *pPEG* API implemented in the pack/module `pPEG` for SWI-Prolog. For information on how to write *pPEG* grammars in general, see [pPEG repo][pPEGrepo]. (For numerous examples of other language grammars specified in ANTLR, a popular grammar system (not *PEG* based), see [ANTLR Examples](https://github.com/antlr/grammars-v4)).
 
 ### `pPEG` Grammar Source
 
@@ -483,11 +483,12 @@ Hopefully these few examples demonstrate how a generic `@` extension can address
 	 pPEG/4                 % quasi-quotation hook for pPEG
 	]).
   
-:- use_module(library(strings),[string/4]).    % for quasi-quoted strings
-:- use_module(library(debug)).                 % for tracing (see peg_trace/0)
-:- use_module(library(option),[option/3]).     % for option list processing
-:- use_module(library(pcre),[re_matchsub/4]).  % uses a regular expression for error & trace output
-:- use_module(library(quasi_quotations), [     % pPEG as quasi-quotation
+:- use_module(library(terms),[term_factorized/3]).  % converts cyclic graphs to terms+subs
+:- use_module(library(strings),[string/4]).         % for quasi-quoted strings
+:- use_module(library(debug)).                      % for tracing (see peg_trace/0)
+:- use_module(library(option),[option/3]).          % for option list processing
+:- use_module(library(pcre),[re_matchsub/4]).       % uses a regular expression for error & trace output
+:- use_module(library(quasi_quotations), [          % pPEG as quasi-quotation
     quasi_quotation_syntax/1, 
     with_quasi_quotation_input/3
 ]).
@@ -525,6 +526,8 @@ Succeeds when *String* unifies with the string defining the *pPEG* grammar. Exte
 
 #### peg_lookup_previous(*+Name,+Env,-String*)
 *Name* is a rule name (an atom or a string) and *Env* is the environment argument provided by the second argument in an extension call. `peg_lookup_previous/3` succeeds unifying *String* with the string previously matched by rule *Name*; otherwise it fails.
+
+`peg_lookup_previous/3` is used to support extensions which require "look-behind" to match a previous match, e.g., an indentation or an opening bracket sequence.
 
 #### pPEG(*+Content,+Args,+Binding,-Grammar*)
 Implements  the  quasi  quotation  syntax `pPEG`; only invoked by the builtin Prolog parser. This predicate compiles the *Content* to *Grammar* using options *Args*. *Binding* is currently not used.

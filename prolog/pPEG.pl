@@ -33,11 +33,12 @@
 	 pPEG/4                 % quasi-quotation hook for pPEG
 	]).
 
-:- use_module(library(strings),[string/4]).    % for quasi-quoted strings
-:- use_module(library(debug)).                 % for tracing (see peg_trace/0)
-:- use_module(library(option),[option/3]).     % for option list processing
-:- use_module(library(pcre),[re_matchsub/4]).  % uses a regular expression for error & trace output
-:- use_module(library(quasi_quotations), [     % pPEG as quasi-quotation
+:- use_module(library(terms),[term_factorized/3]).  % converts cyclic graphs to terms+subs
+:- use_module(library(strings),[string/4]).         % for quasi-quoted strings
+:- use_module(library(debug)).                      % for tracing (see peg_trace/0)
+:- use_module(library(option),[option/3]).          % for option list processing
+:- use_module(library(pcre),[re_matchsub/4]).       % uses a regular expression for error & trace output
+:- use_module(library(quasi_quotations), [          % pPEG as quasi-quotation
     quasi_quotation_syntax/1, 
     with_quasi_quotation_input/3
 ]).
@@ -168,20 +169,23 @@ peg_compile(Src, GrammarSpec) :-              % create an unoptimized parser (a 
 peg_compile(Src, GrammarSpec, OptionList) :-  % create parser, optionally optimized
 	peg_parse(pPEG, Src, Ptree, _, OptionList),
 	option_value(optimise(Opt),OptionList,true),
-	(Opt = true -> optimize_peg(Ptree,Grammar) ; Grammar=Ptree),
-	term_factorized(Grammar,'Peg'(Rules),Subs),  % deconstruct result to an acyclic grammar and substitution list
-	reduce_subs(Subs,LHSs,RHSs),                 % generate single unification expression
-	LHS =.. [$|LHSs], RHS =.. [$|RHSs], 
-	('Peg'(Rules,LHS=RHS) = GrammarSpec
-	 -> true                   % Grammar Spec can be Grammar
-	 ;  (atom(GrammarSpec)     % or name of a Grammar
+	(Opt = true -> optimize_peg(Ptree,Graph) ; Graph = Ptree),
+	acyclic_grammar(Graph,Grammar),           % map to minimal acyclic Grammar
+	(Grammar = GrammarSpec
+	 -> true                                  % GrammarSpec unified with Grammar
+	 ;  (atom(GrammarSpec)                    % GrammarSpec is name of a Grammar
 	     -> atomic_concat('pPEG:$',GrammarSpec,GKey),
-	        nb_setval(GKey,'Peg'(Rules,LHS=RHS))
+	        nb_setval(GKey,Grammar)
 	     ;  current_prolog_flag(verbose,GVrbse),
 	        option_value(verbose(Vrbse),OptionList,GVrbse), % default = global setting
 	        peg_fail_msg(peg(argError('GrammarSpec',GrammarSpec)),Vrbse)
 	    )
 	).
+
+acyclic_grammar(Graph,'Peg'(Rules,LHS=RHS)) :-
+	term_factorized(Graph,'Peg'(Rules),Subs),  % deconstruct result to an acyclic grammar and substitution list
+	reduce_subs(Subs,LHSs,RHSs),               % generate single unification expression
+	LHS =.. [$|LHSs], RHS =.. [$|RHSs]. 
 
 reduce_subs([],[],[]).
 reduce_subs([LHS=RHS|Subs],[LHS|LHSs],[RHS|RHSs]) :-
