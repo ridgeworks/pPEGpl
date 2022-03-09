@@ -78,7 +78,7 @@ The process of applying the rule name (the left hand side of a rule) to some val
 
 ### Compiling *pPEG* Grammars
 
-"Compiling" maps the source for a *pPEG* grammar into a parser that recognizes text input in the language specified by the grammar. This is done using the predicate `peg_compile/2` which takes as arguments a string containing the grammar source, and a grammar term to be used in subsequent parsing operations. (`peg_compile/3` takes an additional argument specifying a list of options as discussed below.) If the grammar term is a variable, it is unified with the grammar term produced by compiling the source. If it is an atom, it will be used as a name that can subsequently used to lookup such a grammar term when required by the parser. (It's stored  by the `pPEG` module in a global variable as a side effect of the compile.) Here are the two options using the CSV grammar previously defined:
+"Compiling" maps the source for a *pPEG* grammar into a parser that recognizes text input in the language specified by the grammar. This is done using the predicate `peg_compile/2` which takes as arguments a string containing the grammar source, and a grammar term to be used in subsequent parsing operations. (`peg_compile/3` takes an additional argument specifying a list of options as discussed below.) If the grammar term is a variable, it is unified with the grammar term produced by compiling the source. If it is an atom, it will be used as a name that can subsequently used to lookup such a grammar term when required by the parser; the name `pPEG` is reserved for the `pPEG` grammar, which is used to compile other grammars. (It's stored  by the `pPEG` module in a global variable as a side effect of the compile.) Here are the two options using the CSV grammar previously defined:
 ```
 ?- csv_grammar(CSV), peg_compile(CSV,CSVG).
 CSV = "CSV     = Hdr Row+\nHdr     = Row\nRow     = field (',' field)* '\\r'? '\\n'\nfield   = _string / _text / ''\n\n_text   = ~[,\\n\\r]+\n_string = '\"' (~[\"] / '\"\"')* '\"'\n",
@@ -92,12 +92,12 @@ As you can see the grammar term is quite verbose, in fact it's the actual progra
 In unoptimised form, the grammar term is just contains the *ptree* result of applying the `pPEG` grammar to the grammar source. However, by default, the the grammar is optimised to maximize runtime performance. The compile `peg_compile` `optimise` option can be used to explicitly control this, but the default settings are all that's normally needed.
   
 Another advantage of the optimization process is that some grammar errors will be detected resulting in "Warning" messages. These include messages for undefined and duplicate rules:
- ```
- ?- peg_compile("rule1=s rule1='x'",G).
- Warning: pPEG: rule rule1 already defined
- Warning: pPEG: s undefined
- G = 'Peg'([rule(rule1, call_O(rule(s, _A))), rule(rule1, call_O(rule(s, _A)))]).
- ```
+```
+?-  peg_compile("rule1=s rule1='x'",G).
+Warning: pPEG: duplicate rule rule1 will be overwritten
+Warning: pPEG: s undefined
+G = 'Peg'([rule(rule1, call_O(_)), rule(rule1, sq_O(exact, "x"))], [_, _]).
+```
  Although the compile succeeds, the grammars will probably not function as intended: using an undefined rule will just fail, and the first definition of any rule will always be used. However, note that any errors in parsing the grammar will still result in failure. 
 
 A grammar defined in a `pPEG` quasi-quotation does not have to be explicitly compiled since the builting Prolog parser will automatically invoke the `pPEG` compiler and replace the quasi-quaotation with the result. Any arguments will be treated as compiler options, e.g.,:
@@ -483,7 +483,6 @@ Hopefully these few examples demonstrate how a generic `@` extension can address
 	 pPEG/4                 % quasi-quotation hook for pPEG
 	]).
   
-:- use_module(library(terms),[term_factorized/3]).  % converts cyclic graphs to terms+subs
 :- use_module(library(strings),[string/4]).         % for quasi-quoted strings
 :- use_module(library(debug)).                      % for tracing (see peg_trace/0)
 :- use_module(library(option),[option/3]).          % for option list processing

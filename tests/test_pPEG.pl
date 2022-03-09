@@ -51,16 +51,16 @@ parse_test(Src,Input,Result,Options) :-
 	 peg_compile(Src,G,Options),
 	 peg_parse(G,Input,Result).
 
-test(identity, R=PG) :-  % if this works, many things are already working
+test(identity, PG='Peg'(PRules,_)) :-  % if this works, many things are already working
 	peg_grammar(S),
 	peg_compile(S,PG,[optimise(false)]),
-	peg_parse(PG,S,R).
+	peg_parse(PG,S,'Peg'(PRules)).
 
-test(basic_rule, G='Peg'([rule([id("rule1"), id("Rule2_")])])) :-
+test(basic_rule, G='Peg'([rule([id("rule1"), id("Rule2_")])],_)) :-
 	S="rule1 = Rule2_",
 	peg_compile(S,G,[optimise(false)]).
 
-test(basic_rule_O, G='Peg'([rule(rule1, call_O(rule('Rule2_', _)))])) :-
+test(basic_rule_O, G='Peg'([rule(rule1, call_O(rule('Rule2_', _)))],_)) :-
 	S="rule1 = Rule2_",
 	peg_compile(S,G,[optimise(true)]).
 

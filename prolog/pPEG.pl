@@ -33,7 +33,6 @@
 	 pPEG/4                 % quasi-quotation hook for pPEG
 	]).
 
-:- use_module(library(terms),[term_factorized/3]).  % converts cyclic graphs to terms+subs
 :- use_module(library(strings),[string/4]).         % for quasi-quoted strings
 :- use_module(library(debug)).                      % for tracing (see peg_trace/0)
 :- use_module(library(option),[option/3]).          % for option list processing
@@ -95,7 +94,7 @@ boot_grammar_def('Peg'([
 
 	rule([id("sfx"),chs("[*+?]")]),
 	rule([id("pfx"),chs("[!&~]")])
-], _=_)).  % no substitution required
+], _)).  % no substitution required
 
 /* Corresponds to:
 peg_bootstrap_grammar({|string||
@@ -169,8 +168,7 @@ peg_compile(Src, GrammarSpec) :-              % create an unoptimized parser (a 
 peg_compile(Src, GrammarSpec, OptionList) :-  % create parser, optionally optimized
 	peg_parse(pPEG, Src, Ptree, _, OptionList),
 	option_value(optimise(Opt),OptionList,true),
-	(Opt = true -> optimize_peg(Ptree,Graph) ; Graph = Ptree),
-	acyclic_grammar(Graph,Grammar),           % map to minimal acyclic Grammar
+	make_grammar(Opt,Ptree,Grammar),
 	(Grammar = GrammarSpec
 	 -> true                                  % GrammarSpec unified with Grammar
 	 ;  (atom(GrammarSpec)                    % GrammarSpec is name of a Grammar
@@ -182,14 +180,9 @@ peg_compile(Src, GrammarSpec, OptionList) :-  % create parser, optionally optimi
 	    )
 	).
 
-acyclic_grammar(Graph,'Peg'(Rules,LHS=RHS)) :-
-	term_factorized(Graph,'Peg'(Rules),Subs),  % deconstruct result to an acyclic grammar and substitution list
-	reduce_subs(Subs,LHSs,RHSs),               % generate single unification expression
-	LHS =.. [$|LHSs], RHS =.. [$|RHSs]. 
-
-reduce_subs([],[],[]).
-reduce_subs([LHS=RHS|Subs],[LHS|LHSs],[RHS|RHSs]) :-
-	reduce_subs(Subs,LHSs,RHSs).
+make_grammar(true,Ptree,Grammar) :- !,        % optimise grammar, refs created by optimiser
+	optimize_peg(Ptree,Grammar).
+make_grammar(_,'Peg'(Rules),'Peg'(Rules,_)).  % non-optimised, no refs needed
 
 %
 % peg_parse/3 :use a Peg grammar to parse an Input string to a ptree Result
@@ -238,9 +231,10 @@ peg_setup_parse_(GrammarSpec,Input,Vrbse,TRules,GName,@(Grammar,WS,[],0,([],[]))
 	 -> true
 	 ;  peg_fail_msg(peg(argError('Input',Input)),Vrbse)
 	),
-	(GrammarSpec='Peg'(Grammar0,S=S)  % unifies LHSs and RHSs in substitution term
+	(copy_term(GrammarSpec,'Peg'(Grammar0,Grammar0))  % make a copy before sunstituting refs
 	 -> true
-	 ; (atom(GrammarSpec), atomic_concat('pPEG:$',GrammarSpec,GKey), nb_current(GKey,'Peg'(Grammar0,S=S))
+	 ; % retrieving from globals makes it's own copy
+	   (atom(GrammarSpec), atomic_concat('pPEG:$',GrammarSpec,GKey), nb_current(GKey,'Peg'(Grammar0,Grammar0))
 	    -> true
 	    ;  peg_fail_msg(peg(argError('Grammar',GrammarSpec)),Vrbse)
 	   )
@@ -266,7 +260,9 @@ prolog:message(peg(argError(Arg,Value))) -->  % DCG
 prolog:message(peg(errorInfo(GName,Rule,Inst,Pos,Input))) -->  % DCG
 	{rule_elements(Rule,GName,Elems),
 	 atomics_to_string(Elems,".",RName),
-	 peg_line_pos(Input,Pos,0,1,Text,EPos,ELineNum),    % source text information
+	 string_length(Input,InputLen),                     % Pos may be past Input length
+	 StartPos is min(Pos,InputLen-1),
+	 peg_line_pos(Input,StartPos,0,1,Text,EPos,ELineNum),  % source text information
 	 CPos is EPos+1,                                    % cursor position is 1 based
 	 (vm_instruction(Inst,Exp) -> true ; Exp = []),
 	 rule_elements(Exp,GName,FElems),
@@ -820,30 +816,31 @@ peg_inst_type(dq_O(_,_),terminal).
 peg_inst_type(chs(_),terminal).
 peg_inst_type(chs_O(_,_),terminal).
 peg_inst_type(extn(_),terminal).
-peg_inst_type(id(_),notrace).     % not traced, caught in call_O
-peg_inst_type(call_O(_),call).
-peg_inst_type(trace(_),notrace).  % not traced, caught in call_O
+peg_inst_type(id(_),notrace).               % not traced, caught in call_O
+peg_inst_type(call_O(rule(_,Exp)),Type) :-  % don't trace calls which are explicitly traced
+	Exp = trace(_) -> Type = notrace ; Type = call.
+peg_inst_type(trace(_),notrace).            % not traced, caught in call_O
 
 peg_cursor_pos(Input,Pos,Cursor) :-
-	peg_line_pos(Input,Pos,0,1,_Text,LinePos,LineNo),    % source text information
-	CPos is LinePos +1,                                  % cursor position is 1 based
-	format(string(Cursor),"~` t~d~4+.~d~4+",[LineNo,CPos]).  % more format tab magic
+	string_length(Input,InputLen),                             % Pos may be past Input length
+	StartPos is min(Pos,InputLen-1),
+	peg_line_pos(Input,StartPos,0,1,_Text,LinePos,LineNo),     % source text information
+	CPos is LinePos +1,                                        % cursor position is 1 based
+	format(string(Cursor),"~` t~d~4+.~d~4+",[LineNo,CPos]).    % more format tab magic
 
-peg_line_pos(Input,Pos,LinePos,LineNum,Text,EPos,ELineNum) :-
-	Pos > LinePos,
-	re_matchsub("[^\n\r]*(\n|\r\n?)",Input,Match,[start(LinePos)]), !,  % match a line
+peg_line_pos("",_Pos,_LinePos,LineNum,"",0,LineNum) :- !.      % corner case: empty string
+peg_line_pos(Input,Pos,LinePos,LineNum,Text,EPos,ELineNum) :-  % assumes Pos has been range checked
+	% Note: could use a pPEG for line matching, but this avoids re-entrant issues with globalvars
+	re_matchsub("[^\n\r]*(\n|\r\n?)?",Input,Match,[start(LinePos)]),  % match a line
 	string_length(Match.0,Len),
 	NxtLinePos is LinePos+Len,
-	(Pos < NxtLinePos                          % Pos is within this line?
-	 -> string_concat(Text,Match.1,Match.0),   % yes
+	((LinePos =< Pos,Pos < NxtLinePos)                 % Pos is within this line?
+	 -> string_concat(Text,Match.get(1,""),Match.0),   % yes
 	    EPos is Pos-LinePos,
 	    ELineNum = LineNum
-	 ;  NxtLineNum is LineNum+1,               % no
+	 ;  NxtLineNum is LineNum+1,                       % no
 	    peg_line_pos(Input,Pos,NxtLinePos,NxtLineNum,Text,EPos,ELineNum) 
 	).
-peg_line_pos(Input,Pos,LinePos,LineNum,Text,EPos,LineNum) :-  % last line
-	sub_string(Input,LinePos,_,0,Text),
-	EPos is Pos-LinePos.
 
 peg_trace_input(Input,PosIn,Str) :-
 	sub_string(Input,PosIn,L,0,SStr),          % current residue
@@ -968,22 +965,34 @@ escape_chars([C|CharsIn],['\\','u',X1,X2,X3,X4|CharsOut]) :-
 % normally takes unoptimized ptree as input, but it's idempotent
 % produces an optimized grammar object which is faster but not a ptree (it's cyclic!)
 %
-optimize_peg('Peg'(Rules),'Peg'(RulesO)) :-
+optimize_peg('Peg'(Rules),'Peg'(RulesO,RRefs)) :-
 	(optimize_rules(Rules,RDefs,RulesO)
-	 -> chk_RDefs(RDefs)  % must be done after optimize so as to not corrupt refs
+	 -> once(length(RDefs,_)),         % make indefinite list definite
+	    chk_RDefs(RulesO,RDefs,RRefs)  % must be done after optimize so as to not corrupt refs
 	 ;  (Rules = [rule([id(GName),_])|_Rules] -> true ; GName = "?unknown?"),
 	    print_message(warning,peg(optimize_fail(GName))),  % ensures failure msg               
 	    fail
 	 ).
 
-chk_RDefs([]) :- !.
-chk_RDefs([Name:Rule|RDefs]) :-
-	(var(Rule)
-	 -> print_message(warning, peg(undefined(Name))),  % also caught by id instruction	 
-	    atom_string(PName,Name), 
-	    Rule = rule(PName,_)  % bind a name with var to catch if used
-	 ;  true
-	), chk_RDefs(RDefs).
+chk_RDefs([],RDefs,[]) :-
+	forall(member(Name:_,RDefs), print_message(warning, peg(undefined(Name)))).
+chk_RDefs([rule(PName,_)|Rules],RDefs,[_|RRefs]) :-
+	memberchk(rule(PName,_),Rules), !,                % check for duplicates
+	print_message(warning,peg(duplicate(PName))),     % found, later rules overwrite                
+	chk_RDefs(Rules,RDefs,RRefs).
+chk_RDefs([rule(PName,_)|Rules],RDefs,[RRef|RRefs]) :-
+	atom_string(PName,Name),
+	remove_def(RDefs,Name,RRef,NxtRDefs),
+	chk_RDefs(Rules,NxtRDefs,RRefs).
+
+remove_def([],_Name,_RRef,[]).
+%	print_message(warning, peg(unreferenced(Name))).
+remove_def([Name:RRef|RDefs],Name,RRef,RDefs) :- !.
+remove_def([RDef|RDefs],Name,RRef,[RDef|NxtRDefs]) :-
+	remove_def(RDefs,Name,RRef,NxtRDefs).
+
+prolog:message(peg(duplicate(Name))) -->  % DCG
+	[ "pPEG: duplicate rule ~w, will be overwritten later" - [Name] ].
 
 prolog:message(peg(optimize_fail(GName))) -->  % DCG
 	[ "pPEG: grammar ~w optimization failed" - [GName] ].
@@ -993,18 +1002,10 @@ optimize_rules([Rule|Rules],RDefs,[RuleO|RulesO]) :-
 	optimize_rule(Rule,RDefs,RuleO),
 	optimize_rules(Rules,RDefs,RulesO).
 
-optimize_rule(rule([id(Name),Exp]), RDefs, RuleO) :- !, % unoptimized rule 
+optimize_rule(rule([id(Name),Exp]), RDefs, rule(PName,ExpO)) :- !, % unoptimized rule 
 	atom_string(PName,Name),  % optimised rule name is atom for building ptrees
-	RuleO = rule(PName,ExpO),
-	memberchk(Name:RuleO, RDefs),
-	(var(ExpO)
-	 -> optimize_exp(Exp, RDefs, ExpO)                  % OK, rule not already defined
-	 ;  print_message(warning,peg(duplicate(Name)))     % duplicate rule               
-	).
+	optimize_exp(Exp, RDefs, ExpO).
 optimize_rule(rule(Name,Exp), _RDefs, rule(Name,Exp)).  % already optimized?
-
-prolog:message(peg(duplicate(Name))) -->  % DCG
-	[ "pPEG: rule ~w already defined" - [Name] ].
 
 optimize_exp(id(Name), RDefs, call_O(Rule)) :-          % id(Name) ==> call_O(Rule)
 	memberchk(Name:Rule, RDefs).

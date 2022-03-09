@@ -132,7 +132,7 @@ prolog_grammar({|pPEG||
 	_ws       = [ \t-\r]+                                  # [ \t\n\v\f\r]
 	          / '%' ~[\n\r]*                               # line comment
 	          / _blkcmt                                    # block comment
-	_blkcmt  = '/*' (~[/*] / _blkcmt / ~('*/'))* '*/'
+	_blkcmt   = '/*' (~[/*] / _blkcmt / ~('*/'))* '*/'
 
 |}).
 
