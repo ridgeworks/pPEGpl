@@ -28,8 +28,8 @@
 :- if(true).
 :- use_module(library(strings),[string/4]).    % for quasi-quoted strings
 :- (current_module(pPEG) -> true ; use_module(library(pPEG))).
-:- (current_module(rexp_pPEGxt) -> true ; use_module(library(rexp_pPEGxt))).
-:- (current_module(csg_pPEGxt) -> true ; use_module(library(csg_pPEGxt))).
+:- (current_module(rexp_pPEGxt) -> true ; reexport(library(rexp_pPEGxt),[re_match/6])).
+:- (current_module(csg_pPEGxt) -> true ; reexport(library(csg_pPEGxt),['@'/6])).
 /*
 :- module(pPEG,[            % module pPEG exports:
 	 peg_compile/2,         % create a grammar from a source string

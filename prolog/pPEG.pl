@@ -297,9 +297,13 @@ rule_elements(Rule,_GName,[Rule]).           % nothing else qualified by grammar
 % lookup previous match of rule Name in Env
 %
 peg_lookup_previous(Name,Env,Match) :-
-	atom_string(RName,Name),
 	arg(5,Env,Ctxt),                         % Env[5] = Ctxt for maintaining prior matches
-	lookup_match_(Ctxt,RName,Match).
+	(var(Name)
+	 -> lookup_match_(Ctxt,RName,Match),     % most recent match
+	    atom_string(RName,Name)
+	 ;  atom_string(RName,Name),             % previous named match
+	    lookup_match_(Ctxt,RName,Match)
+	).
 
 lookup_match_((Matches,Parent),Name,Match) :-
 	(memberchk((Name,slice(Input,PosIn,PosOut)),Matches)

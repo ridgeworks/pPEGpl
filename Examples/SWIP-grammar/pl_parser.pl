@@ -75,8 +75,8 @@ mergeNamedVars([V|Vs],Vars) :-
 %% node_to_term(Node,Term) - convert a ptree node to a native prolog term
 node_to_term('Pexpr'([Expr]), Vars, NxtVars, Term) :- !,
 	node_to_term(Expr, Vars, NxtVars, Term).
-node_to_term('Compound'([atom(FS)|Args]), Vars, NxtVars, Term) :- !,
-	node_to_term(atom(FS), Vars, Vars, F),  %%atom_string(F,FS),
+node_to_term('Compound'([Func|Args]), Vars, NxtVars, Term) :- !,
+	node_functor(Func,F),
 	(Args = []
 	 -> NxtVars = Vars,
 	    compound_name_arity(Term,F,0)
@@ -106,13 +106,8 @@ node_to_term(atom(Raw), Vars, Vars, Atom) :- !,
 	 -> sub_string(Raw,1,_,1,Raw1),   % if quoted process escapes
 	    string_chars(Raw1,Cs),
 	    unescape_(Cs,'\'',ECs),
-	    atom_chars(Atom,ECs)	 	
-	 ;  split_string(Raw," "," ",LRaw),  % brackets test (only removes space chars, not whitespace in general)
-	    atomics_to_string(LRaw,Str),
-	    (Str = "[]" -> Atom = [] ;
-	     Str = "{}" -> Atom = {} ;
-	     atom_string(Atom,Raw)
-	    )
+	    atom_chars(Atom,ECs)
+	 ;  atom_string(Atom,Raw)
 	 ).
 node_to_term(string(Raw), Vars, Vars, String):- !,
 	sub_string(Raw,1,_,1,Raw1),       % strip outer quotes
@@ -144,10 +139,19 @@ node_to_term(elem(Expr), Vars, NxtVars, Term) :- !,  % 'elem' is equivalent to '
 node_to_term(expr(Expr), Vars, NxtVars, Term) :- !,
 	% gateway to nasty operator stuff (precedence and associativity)
 	flatten_exp_(Expr,T/T,List/[]),
-	build_term_(List, Vars, NxtVars, Term),
+	build_term_(List, Vars, NxtVars, ['$"'(Term)]),
 	!.  % deterministic
 
-node_to_term('$"'(Term), Vars, Vars, Term).     % already converted
+node_to_term('$"'(Term), Vars, Vars, Term).     % already converted in expression
+
+% extract functor from a node ('atom' or 'functor')
+node_functor(atom(FS),F) :-
+	node_to_term(atom(FS), Vars, Vars, F).
+node_functor(functor(Blk), F) :-
+	sub_atom(Blk,0,1,_,BlkType),  % map block functors to brackets functor
+	(BlkType = '[' -> F = [] ;
+	 BlkType = '{' -> F = {}
+	).
 
 % parse a number using builtin number_string/2 (a bit of a cheat since it uses SWIP parser)
 string_number_(String,Num) :-
@@ -270,56 +274,73 @@ flatten_exp_([expr(Sub)|Ex],LIn,LOut) :- !,
 flatten_exp_([E|Ex],LIn/[E|Ts],LOut) :-
 	flatten_exp_(Ex,LIn/Ts,LOut).
 
-opDef('PrefixOp'([OpTerm]),op(P,A,OpVal)) :-
-	term_op(OpTerm,Op,OpVal),
-	current_op(P,A,Op),
-	sub_atom(A,0,1,1,'f').  % f_ 
-opDef('InfixOp'([OpTerm]),op(P,A,OpVal)) :-
-	term_op(OpTerm,Op,OpVal),
-	current_op(P,A,Op),
-	sub_atom(A,1,1,1,'f').  % _f_  
-opDef('PostfixOp'([OpTerm]),op(P,A,OpVal)) :-
-	term_op(OpTerm,Op,OpVal),
-	current_op(P,A,Op),
-	sub_atom(A,1,1,0,'f').  % _f
+opDef('PrefixOp'([OpTerm]),Op) :-
+	term_op(OpTerm,Op,A),
+	sub_atom(A,0,1,1,'f'),     % f_
+	!.  % CP from term_op
+opDef('InfixOp'([OpTerm]),Op) :-
+	term_op(OpTerm,Op,A),
+	sub_atom(A,1,1,1,'f'),     % _f_  
+	!.  % CP from term_op
+opDef('PostfixOp'([OpTerm]),Op) :-
+	term_op(OpTerm,Op,A),
+	sub_atom(A,1,1,0,'f'),     % _f
+	!.  % CP from term_op
 
-term_op(op(SOp),Op,Op) :- !,
-	node_to_term(atom(SOp), _, _, Op).  % convert string value to atom
-term_op('List'(Arg),[],[](Arg)) :- !. 
-term_op('Curly'(Arg),{},{}(Arg)). 
+term_op(op(SOp),op(P,A,Op),A) :- !,
+	node_to_term(atom(SOp), _, _, Op),          % convert string value to atom
+	current_op(P,A,Op).  % leaves a CP
+term_op(minus(_),op(0,fx,'0-'),fx) :- !.        %: Note unquoted 0- cannot be a operator.
+term_op('List'(Arg),op(P,A,Op),A) :- !,
+	Arg = [] -> Op = [] ; Op = [](Arg),
+	current_op(P,A,[]).  % leaves a CP
+term_op('Curly'(Arg),op(P,A,Op),A) :- 
+	(Arg = [] -> Op = {} ; Op = {}(Arg)),
+	current_op(P,A,{}).  % leaves a CP
 
 % expression utility: build a term from flattened expression
 % use cuts to avoid multiple error messages on nested failure
-build_term_([V], VarsIn, VarsOut, Term) :-                                  % just a value
+build_term_([V], VarsIn, VarsOut, [Term]) :-                                % just a value
 	not_op(V),
 	node_to_term(V,VarsIn,VarsOut,Term),
 	!.
 
+build_term_([op(0,fx,'0-'), V], VarsIn, VarsOut, ['$"'(Term)]) :-           % negative numbers
+	neg_numeric_(V,NegV), !,
+	build_term_([NegV], VarsIn, VarsOut, [Term]).
+
 build_term_([op(_P,_A,Op), V], VarsIn, VarsOut, Term) :-                    % simple prefix
-	!,
+	!,  % grammar prohibits two succesive ops in expression
 	build_term_([V], VarsIn, VarsNxt, Term1), 
-	reduce_term_(Op, [Term1], VarsNxt, VarsOut, Term).
+	reduce_term_(Op, Term1, VarsNxt, VarsOut, Term).
 
 build_term_([V, op(_P,_A,Op)], VarsIn, VarsOut, Term) :-                    % simple postfix
-	!,
+	!,  % grammar prohibits two succesive ops in expression
 	build_term_([V], VarsIn, NxtVars, Term1),
-	reduce_term_(Op, [Term1], NxtVars, VarsOut, Term).
+	reduce_term_(Op, Term1, NxtVars, VarsOut, Term).
+
+build_term_([V1, op(_P1,_A1,Op1), V2], VarsIn, VarsOut, Term) :-            % simple infix
+	not_op(V1), not_op(V2),
+	!,
+	build_term_([V1],VarsIn,NxtVars1,[Term1]),
+	build_term_([V2],NxtVars1,NxtVars2,[Term2]), 
+	reduce_term_(Op1, [Term1,Term2], NxtVars2, VarsOut, Term).
 
 build_term_([op(P1,A1,Op1), op(P2,A2,Op2)|Etc], VarsIn, VarsOut, Term) :-   % prefix prefix
 	op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), right),
 	!,
-	build_term_([op(P2,A2,Op2)|Etc], VarsIn, VarsNxt, Term1),
-	reduce_term_(Op1, [Term1], VarsNxt, VarsOut, Term).
+	build_term_right_([op(P2,A2,Op2)|Etc], VarsIn, VarsNxt, RHS),
+	build_term_([op(P1,A1,Op1)|RHS], VarsNxt, VarsOut, Term).
 
 build_term_([op(P1,A1,Op1), V, op(P2,A2,Op2)|Etc], VarsIn, VarsOut, Term) :-   % prefix infix/postfix
 	not_op(V),
 	op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), Ass),
 	!,
 	(Ass = left
-	 -> build_term_([op(P1,A1,Op1), V], VarsIn, NxtVars, Vterm),
-	    build_term_(['$"'(Vterm), op(P2,A2,Op2)|Etc], NxtVars, VarsOut, Term)
-	 ;  build_term_([V, op(P2,A2,Op2)|Etc], VarsIn, NxtVars, Vterm),
-	    build_term_([op(P1,A1,Op1), '$"'(Vterm)], NxtVars, VarsOut, Term)
+	 -> build_term_([op(P1,A1,Op1), V], VarsIn, NxtVars, [LHS]),
+	    build_term_([LHS, op(P2,A2,Op2)|Etc], NxtVars, VarsOut, Term)
+	 ;  build_term_right_([V, op(P2,A2,Op2)|Etc], VarsIn, NxtVars, RHS),
+	    build_term_([op(P1,A1,Op1)|RHS], NxtVars, VarsOut, Term)
 	).
 
 build_term_([V, op(P1,A1,Op1), op(P2,A2,Op2)|Etc], VarsIn, VarsOut, Term) :-   % postfix postfix ; infix prefix
@@ -327,31 +348,61 @@ build_term_([V, op(P1,A1,Op1), op(P2,A2,Op2)|Etc], VarsIn, VarsOut, Term) :-   %
 	op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), Ass),
 	!,
 	(Ass = left
-	 -> build_term_([V, op(P1,A1,Op1)], VarsIn, NxtVars, Vterm),
-	    build_term_(['$"'(Vterm), op(P2,A2,Op2)|Etc], NxtVars, VarsOut, Term)
-	 ;  build_term_([op(P2,A2,Op2)|Etc], VarsIn, NxtVars, Vterm),
-	    build_term_([V, op(P1,A1,Op1), '$"'(Vterm)], NxtVars, VarsOut, Term)
+	 -> build_term_([V, op(P1,A1,Op1)], VarsIn, NxtVars, [LHS]),
+	    build_term_([LHS, op(P2,A2,Op2)|Etc], NxtVars, VarsOut, Term)
+	 ;  build_term_right_([op(P2,A2,Op2)|Etc], VarsIn, NxtVars, RHS),
+	    build_term_([V, op(P1,A1,Op1)|RHS], NxtVars, VarsOut, Term)
 	).
-
-build_term_([V1, op(_P1,_A1,Op1), V2], VarsIn, VarsOut, Term) :-            % simple infix
-	!,
-	build_term_([V1],VarsIn,NxtVars1,Term1),
-	build_term_([V2],NxtVars1,NxtVars2,Term2), 
-	reduce_term_(Op1, [Term1,Term2], NxtVars2, VarsOut, Term).
 
 build_term_([V1, op(P1,A1,Op1), V2, op(P2,A2,Op2)|Etc], VarsIn, VarsOut, Term) :-  % infix, infix/postfix
 	op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), Ass),
 	!,
 	(Ass = left
-	 -> build_term_([V1, op(P1,A1,Op1), V2], VarsIn, NxtVars, Vterm),
-	    build_term_(['$"'(Vterm), op(P2,A2,Op2)|Etc], NxtVars, VarsOut, Term)
-	 ;  build_term_([V2, op(P2,A2,Op2)|Etc], VarsIn, NxtVars, Vterm),
-	    build_term_([V1, op(P1,A1,Op1), '$"'(Vterm)], NxtVars, VarsOut, Term)
+	 -> build_term_([V1, op(P1,A1,Op1), V2], VarsIn, NxtVars, [LHS]),
+	    build_term_([LHS, op(P2,A2,Op2)|Etc], NxtVars, VarsOut, Term)
+	 ;  build_term_right_([V2, op(P2,A2,Op2)|Etc], VarsIn, NxtVars, RHS),
+	    build_term_([V1, op(P1,A1,Op1)|RHS], NxtVars, VarsOut, Term)
 	).
 
 build_term_(Exp, VarsIn, _VarsOut, _Term) :-
 	print_message(informational, prolog_parser(op_conflict(Exp,VarsIn))),
 	fail.
+
+% build RHS recursively as far as possible, then return value and rest of tokens
+build_term_right_([op(P1,A1,Op1), op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term) :-
+	!,
+	op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), right),
+	build_term_right_([op(P2,A2,Op2)|Etc], VarsIn, VarsOut, RHS),
+	Term = [op(P1,A1,Op1)|RHS].
+
+build_term_right_([op(P1,A1,Op1), V, op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term) :-
+	!,
+	(op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), right)
+	 -> build_term_right_([V, op(P2,A2,Op2) |Etc], VarsIn, VarsOut, RHS),
+	    Term = [op(P1,A1,Op1)|RHS]
+	 ;  build_term_([op(P1,A1,Op1), V], VarsIn, VarsOut, [LHS]),
+	    Term = [LHS,op(P2,A2,Op2)|Etc]
+	).
+
+build_term_right_([V, op(P1,A1,Op1), op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term) :-
+	!,
+	(op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), right)
+	 -> build_term_right_([op(P2,A2,Op2) |Etc], VarsIn, VarsOut, RHS),
+	    Term = [V, op(P1,A1,Op1) |RHS]
+	 ;  build_term_([V, op(P1,A1,Op1)], VarsIn, VarsOut, [LHS]),
+	    Term = [LHS,op(P2,A2,Op2)|Etc]
+	).
+
+build_term_right_([V1, op(P1,A1,Op1), V2, op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term) :-
+	!,
+	(op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), right)
+	 -> build_term_right_([V2, op(P2,A2,Op2) |Etc], VarsIn, VarsOut, RHS),
+	    Term = [V1, op(P1,A1,Op1) |RHS]
+	 ;  build_term_([V1, op(P1,A1,Op1), V2], VarsIn, VarsOut, [LHS]),
+	    Term = [LHS,op(P2,A2,Op2)|Etc]
+	).
+
+build_term_right_(Exp, VarsIn, VarsOut, Term) :- build_term_(Exp, VarsIn, VarsOut, Term).
 
 
 prolog:message(prolog_parser(op_conflict(Exp,VarsIn))) -->  % DCG
@@ -362,17 +413,23 @@ prolog:message(prolog_parser(op_conflict(Exp,VarsIn))) -->  % DCG
 	},
 	[ Format - FExp ].
 
-reduce_term_([](Arg), Terms, VarsIn, VarsOut, Term) :-
+reduce_term_([](Arg), Terms, VarsIn, VarsOut, ['$"'(Term)]) :-
 	args_terms(Arg,VarsIn,VarsOut,OpArg),
 	Term =.. [[], OpArg |Terms].
-reduce_term_({}([Arg]), Terms, VarsIn, VarsOut, Term) :-
+reduce_term_({}([Arg]), Terms, VarsIn, VarsOut, ['$"'(Term)]) :-
 	node_to_term(Arg,VarsIn,VarsOut,OpArg),
 	Term =.. [{}, {OpArg} |Terms].
-reduce_term_(Op, Terms, VarsIn, VarsIn, Term) :- atomic(Op),  % includes []
+reduce_term_(Op, Terms, VarsIn, VarsIn, ['$"'(Term)]) :- atomic(Op),  % includes []
 	Term =.. [Op|Terms].
 
 not_op(V) :- \+functor(V,op,_).
 
+% negate numeric node values
+neg_numeric_(integer(V),integer(NegV))   :- atomics_to_string(['-',V],NegV).
+neg_numeric_(rational(V),rational(NegV)) :- atomics_to_string(['-',V],NegV).
+neg_numeric_(float(V),float(NegV))       :- atomics_to_string(['-',V],NegV).
+
+% formatting for messages
 format_exp_([], VarsIn, VarsIn, [], []).
 format_exp_([op(P,A,Op)|Exp], VarsIn, VarsOut, [op(P,A,Op)|FExp], ["~p"|VFormat]) :- !,
 	format_exp_(Exp, VarsIn, VarsOut, FExp, VFormat).

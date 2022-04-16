@@ -61,35 +61,36 @@ prolog_grammar({|pPEG||
 	
 	Pexpr  = "( " expr " )"
 	
-	Compound = atom "( " (arg (" , " arg)*)? " )"
-	
-	List   = "[ " (elem (" , " elem)* Tail?) " ]"
+	Compound = functor "( " (arg (" , " arg)*)? " )"
+	functor  = atom / "[ ]" / "{ }"                # block functors can include ws               
+
+	List   = "[ " (elem (" , " elem)* Tail?)? " ]"
 	Tail   = " | " elem                            # improper lists allowed
 	
 	QQuote = "{| " expr " ||" qcontent '|''}'      # can't have qq terminator in the grammar
 	qcontent = ~('|''}')*                          # anything but qq terminator
 	
-	Curly  = "{ " expr " }"
+	Curly  = "{ " expr? " }"
 	
 	var    = _var_start _id_continue
 	string = '"' (~["\\]+ / '""' / _esc)* '"'      # catch escapes and double "s
 	number = float         # 1.3e4
 	       / rational      # 1r2 (canonical version only)
 	       / integer       # 123
-	float  = '-'? _dig+ ('.' _dig+ _exp? / _exp) ('Inf' / 'NaN')?
+	# Note: prefix '-' is not part of number syntax
+	float  = _dig+ ('.' _dig+ _exp? / _exp) ('Inf' / 'NaN')?
 	rational = _dig+ 'r' _dig+
-	integer = '-'? ( '0o' _octal+ 
-	               / '0x' _hex+ 
-	               / '0b' _bin+ 
-	               / "0'" _code 
-	               / _radix 
-	               / _digits
-	               )
+	integer = '0o' _octal+ 
+	        / '0x' _hex+ 
+	        / '0b' _bin+ 
+	        / "0'" _code 
+	        / _radix 
+	        / _digits
 	atom   = _atom                                 # add wrapper for _atom
 	bquote = '`' (~[`\\]+ / '``' / _esc)* '`'
 	
-	_atom  = !_eox ( [!;]                                  # single char symbols
-	               / _mtList / '{' " " '}'                 # empty brackets
+	_atom  = !(_eox / '/*')                                # ISO restrictions 
+	               ( [!;]                                  # single char symbols
 	               / _atom_start _id_continue              # lowercase alpha
 	               / _symbol                               # symbols   
 	               / ("'" (~['\\]+ / "''" / _esc)* "'")    # single quoted text
@@ -110,7 +111,6 @@ prolog_grammar({|pPEG||
 	_code   = _esc / ~[]
 	_radix  = [0-9]*1..2 "'" [0-9a-zA-Z]+
 	
-	_mtList = '[' " " ']'
 	_esc    = '\\' ( [\\abcefnrstv'"`] 
 	               / 'x' _hex+ '\\'?
 	               / _octal+ '\\'?
@@ -120,9 +120,11 @@ prolog_grammar({|pPEG||
 	
 	# operator expressions - in each case match 'op' then 
 	#   test for compatible definition using extension <testOp>
-	PrefixOp  = !('-' [0-9]) op <pl_grammar:testOp prefix> # '-' before number not prefix
-	InfixOp   =              op <pl_grammar:testOp infix>
-	PostfixOp =              op <pl_grammar:testOp postfix>
+	PrefixOp  = minus &[0-9] / op <pl_grammar:testOp prefix>  # treat unary '-' on numbers as PrefixOp
+	InfixOp   =                op <pl_grammar:testOp infix>
+	PostfixOp =                op <pl_grammar:testOp postfix>
+	
+	minus     = '-'
 	
 	# See manual 4.25: "In SWI-Prolog, a quoted atom never acts as an operator."
 	op = !"'" _atom / List / Curly / ',' / '|'             # include block operators, ',' and '|'
@@ -136,6 +138,14 @@ prolog_grammar({|pPEG||
 
 |}).
 
+/* To restrict "Prolog' to clauses, replace Prolog rule with:
+	Prolog = " " (Clause _eox)+
+	Clause = expr " " (Body / DCG / SSU)?
+	Body   = "->  " expr
+	DCG    = "--> " expr
+	SSU    = ", "   expr " => " expr
+Note: untested.
+*/
 :- current_module(pPEG) -> true  ; use_module(library(pPEG),[peg_lookup_previous/3]).
 
 % extension to check to see if previous 'op' match is operator of desired class (infix, prefix, or postfix)

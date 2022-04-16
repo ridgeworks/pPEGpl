@@ -52,7 +52,7 @@ so only a variable or a list are permitted after the vertical bar. (The intent w
 
 #### Module `pl_parser`
 
-For all but the simplest input, the *ptree* result is hard to read and just as difficult to test. So module `pl_parser` implements a simple parser using the grammar defined in `pl_grammar`. It's only exported predicate is `string_termList/2` which converts an input string defining a sequence of terms to a list of terms:
+For all but the simplest input, the *ptree* result is hard to read and just as difficult to test. So module `pl_parser` implements a simple parser using the grammar defined in `pl_grammar`. Its only exported predicate is `string_termList/2` which converts an input string defining a sequence of terms to a list of terms:
 ```
 ?- string_termList("[H|T]. 42.",TL).
 TL = [[H|T], 42].
