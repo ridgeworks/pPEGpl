@@ -120,7 +120,8 @@ prolog_grammar({|pPEG||
 	
 	# operator expressions - in each case match 'op' then 
 	#   test for compatible definition using extension <testOp>
-	PrefixOp  = minus &[0-9] / op <pl_grammar:testOp prefix>  # treat unary '-' on numbers as PrefixOp
+	# Note: treat unary - on number as PrefixOp, prefix followed by '(' not an op (it's a functor)
+	PrefixOp  = minus &[0-9] / op <pl_grammar:testOp prefix>  !'('
 	InfixOp   =                op <pl_grammar:testOp infix>
 	PostfixOp =                op <pl_grammar:testOp postfix>
 	

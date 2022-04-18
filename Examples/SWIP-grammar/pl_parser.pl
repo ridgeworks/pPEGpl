@@ -310,12 +310,14 @@ build_term_([op(0,fx,'0-'), V], VarsIn, VarsOut, ['$"'(Term)]) :-           % ne
 	build_term_([NegV], VarsIn, VarsOut, [Term]).
 
 build_term_([op(_P,_A,Op), V], VarsIn, VarsOut, Term) :-                    % simple prefix
-	!,  % grammar prohibits two succesive ops in expression
+	not_op(V),
+	!,
 	build_term_([V], VarsIn, VarsNxt, Term1), 
 	reduce_term_(Op, Term1, VarsNxt, VarsOut, Term).
 
 build_term_([V, op(_P,_A,Op)], VarsIn, VarsOut, Term) :-                    % simple postfix
-	!,  % grammar prohibits two succesive ops in expression
+	not_op(V),
+	!,
 	build_term_([V], VarsIn, NxtVars, Term1),
 	reduce_term_(Op, Term1, NxtVars, VarsOut, Term).
 
@@ -433,6 +435,8 @@ neg_numeric_(float(V),float(NegV))       :- atomics_to_string(['-',V],NegV).
 format_exp_([], VarsIn, VarsIn, [], []).
 format_exp_([op(P,A,Op)|Exp], VarsIn, VarsOut, [op(P,A,Op)|FExp], ["~p"|VFormat]) :- !,
 	format_exp_(Exp, VarsIn, VarsOut, FExp, VFormat).
+format_exp_(['$"'(T)|Exp], VarsIn, VarsOut, [T|FExp], ["~p"|VFormat]) :- !,
+	format_exp_(Exp, VarsIn, VarsOut, FExp, VFormat).
 format_exp_([V|Exp], VarsIn, VarsOut, [S|FExp], ["~p"|VFormat]) :-
 	node_to_term(V,VarsIn,NxtVars,S),
 	format_exp_(Exp, NxtVars, VarsOut, FExp, VFormat).
@@ -449,7 +453,6 @@ op_associativity(op(P,A1,_), op(P,A2,_), Ass) :- !,
 % Note: missing cases fail (operator clash)
 
 % Pattern: prefix prefix X
-op_associativityEq(fx,fx,right).
 op_associativityEq(fy,fx,right).
 op_associativityEq(fy,fy,right).
 
