@@ -372,12 +372,14 @@ build_term_(Exp, VarsIn, _VarsOut, _Term) :-
 
 % build RHS recursively as far as possible, then return value and rest of tokens
 build_term_right_([op(P1,A1,Op1), op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term) :-
-	!,
-	op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), right),
-	build_term_right_([op(P2,A2,Op2)|Etc], VarsIn, VarsOut, RHS),
-	Term = [op(P1,A1,Op1)|RHS].
+	(op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), right)
+	 -> build_term_right_([op(P2,A2,Op2)|Etc], VarsIn, VarsOut, RHS),
+	    Term = [op(P1,A1,Op1)|RHS]
+%	 ; fail  % to build_term handling via last clause below
+	).
 
 build_term_right_([op(P1,A1,Op1), V, op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term) :-
+	not_op(V),
 	!,
 	(op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), right)
 	 -> build_term_right_([V, op(P2,A2,Op2) |Etc], VarsIn, VarsOut, RHS),
@@ -387,6 +389,7 @@ build_term_right_([op(P1,A1,Op1), V, op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term)
 	).
 
 build_term_right_([V, op(P1,A1,Op1), op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term) :-
+	not_op(V),
 	!,
 	(op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), right)
 	 -> build_term_right_([op(P2,A2,Op2) |Etc], VarsIn, VarsOut, RHS),
@@ -396,6 +399,7 @@ build_term_right_([V, op(P1,A1,Op1), op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term)
 	).
 
 build_term_right_([V1, op(P1,A1,Op1), V2, op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term) :-
+	not_op(V1), not_op(V2),
 	!,
 	(op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), right)
 	 -> build_term_right_([V2, op(P2,A2,Op2) |Etc], VarsIn, VarsOut, RHS),
@@ -404,7 +408,8 @@ build_term_right_([V1, op(P1,A1,Op1), V2, op(P2,A2,Op2) |Etc], VarsIn, VarsOut, 
 	    Term = [LHS,op(P2,A2,Op2)|Etc]
 	).
 
-build_term_right_(Exp, VarsIn, VarsOut, Term) :- build_term_(Exp, VarsIn, VarsOut, Term).
+build_term_right_(Exp, VarsIn, VarsOut, Term) :-  % error or insufficient "tokens
+	build_term_(Exp, VarsIn, VarsOut, Term).
 
 
 prolog:message(prolog_parser(op_conflict(Exp,VarsIn))) -->  % DCG
