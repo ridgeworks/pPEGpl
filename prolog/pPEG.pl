@@ -231,7 +231,7 @@ peg_setup_parse_(GrammarSpec,Input,Vrbse,TRules,GName,@(Grammar,WS,[],0,([],[]))
 	 -> true
 	 ;  peg_fail_msg(peg(argError('Input',Input)),Vrbse)
 	),
-	(copy_term(GrammarSpec,'Peg'(Grammar0,Grammar0))  % make a copy before sunstituting refs
+	(copy_term(GrammarSpec,'Peg'(Grammar0,Grammar0))  % make a copy before substituting refs
 	 -> true
 	 ; % retrieving from globals makes it's own copy
 	   (atom(GrammarSpec), atomic_concat('pPEG:$',GrammarSpec,GKey), nb_current(GKey,'Peg'(Grammar0,Grammar0))
@@ -967,7 +967,7 @@ escape_chars([C|CharsIn],['\\','u',X1,X2,X3,X4|CharsOut]) :-
 %
 % optimizing compiler for use with peg_compile
 % normally takes unoptimized ptree as input, but it's idempotent
-% produces an optimized grammar object which is faster but not a ptree (it's cyclic!)
+% produces an optimized grammar object which is faster but not a ptree
 %
 optimize_peg('Peg'(Rules),'Peg'(RulesO,RRefs)) :-
 	(optimize_rules(Rules,RDefs,RulesO)

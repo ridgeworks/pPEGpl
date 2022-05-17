@@ -108,7 +108,7 @@ prolog_grammar({|pPEG||
 	_octal  = [0-7]
 	_hex    = [0-9a-fA-F]
 	_bin    = [0-1]
-	_code   = _esc / ~[]
+	_code   = _esc / "''" / ~[]
 	_radix  = [0-9]*1..2 "'" [0-9a-zA-Z]+
 	
 	_esc    = '\\' ( [\\abcefnrstv'"`] 

@@ -27,7 +27,7 @@
 :- module(pl_parser, [
 	 string_termList/2       % parse a string specifying a sequence of terms separated by
 	]).                      %   full stops to a list of Prolog terms, i.e., input not
-	                         %   restricted to clauses.
+                             %   restricted to clauses.
 
 :- current_module(pPEG) -> true ; use_module(library(pPEG)).
 :- current_module(pl_grammar).
@@ -183,11 +183,11 @@ args_terms([Arg|Args],VarsIn,VarsOut,[Term|Terms]) :-
 
 % reduce escape sequences
 /*  _esc   = '\\' ( [\\abcefnrstv'"`] 
-	              / 'x' _hex+ '\\'?
-	              / _octal+ '\\'?
-	              / 'u' _hex*4
-	              / 'U' _hex*8
-	              )
+                  / 'x' _hex+ '\\'?
+                  / _octal+ '\\'?
+                  / 'u' _hex*4
+                  / 'U' _hex*8
+                  )
 */
 unescape_([],_Q,[]).
 unescape_(['\\',x,H|Chars],Q,[Esc|MChars]) :-
@@ -232,6 +232,9 @@ plg_escape_('`','`').
 
 hex_char(0,Cs,Acc,Char,Cs) :- !, 
 	char_code(Char,Acc).
+hex_char(Count,[],Acc,Char,[]) :- !,
+	Count < 0,
+	char_code(Char,Acc).
 hex_char(Count,[C|Cs],Acc,Char,Etc) :-
 	hex_value(C,V), !,
 	NxtAcc is Acc*16+V,
@@ -244,6 +247,8 @@ hex_char(Count,[C|Cs],Acc,Char,Etc) :-
 
 hex_value(C,V) :- char_type(C,digit(V)) -> true ; char_type(C,xdigit(V)).
 
+octal_char([],Acc,Char,[]) :- !,
+	char_code(Char,Acc).
 octal_char([C|Cs],Acc,Char,Etc) :-
 	octal_value(C,V), !,
 	NxtAcc is Acc*8+V,
@@ -309,20 +314,20 @@ build_term_([op(0,fx,'0-'), V], VarsIn, VarsOut, ['$"'(Term)]) :-           % ne
 	neg_numeric_(V,NegV), !,
 	build_term_([NegV], VarsIn, VarsOut, [Term]).
 
-build_term_([op(_P,_A,Op), V], VarsIn, VarsOut, Term) :-                    % simple prefix
-	not_op(V),
+build_term_([op(_P,A,Op), V], VarsIn, VarsOut, Term) :-                     % simple prefix
+	not_op(V), sub_atom(A,0,1,1,'f'),                  % f_
 	!,
 	build_term_([V], VarsIn, VarsNxt, Term1), 
 	reduce_term_(Op, Term1, VarsNxt, VarsOut, Term).
 
-build_term_([V, op(_P,_A,Op)], VarsIn, VarsOut, Term) :-                    % simple postfix
-	not_op(V),
+build_term_([V, op(_P,A,Op)], VarsIn, VarsOut, Term) :-                     % simple postfix
+	not_op(V), sub_atom(A,1,1,0,'f'),                  % _f
 	!,
 	build_term_([V], VarsIn, NxtVars, Term1),
 	reduce_term_(Op, Term1, NxtVars, VarsOut, Term).
 
-build_term_([V1, op(_P1,_A1,Op1), V2], VarsIn, VarsOut, Term) :-            % simple infix
-	not_op(V1), not_op(V2),
+build_term_([V1, op(_P1,A1,Op1), V2], VarsIn, VarsOut, Term) :-             % simple infix
+	not_op(V1), not_op(V2), sub_atom(A1,1,1,1,'f'),    % _f_ 
 	!,
 	build_term_([V1],VarsIn,NxtVars1,[Term1]),
 	build_term_([V2],NxtVars1,NxtVars2,[Term2]), 
@@ -340,9 +345,9 @@ build_term_([op(P1,A1,Op1), V, op(P2,A2,Op2)|Etc], VarsIn, VarsOut, Term) :-   %
 	!,
 	(Ass = left
 	 -> build_term_([op(P1,A1,Op1), V], VarsIn, NxtVars, [LHS]),
-	    build_term_([LHS, op(P2,A2,Op2)|Etc], NxtVars, VarsOut, Term)
+		build_term_([LHS, op(P2,A2,Op2)|Etc], NxtVars, VarsOut, Term)
 	 ;  build_term_right_([V, op(P2,A2,Op2)|Etc], VarsIn, NxtVars, RHS),
-	    build_term_([op(P1,A1,Op1)|RHS], NxtVars, VarsOut, Term)
+		build_term_([op(P1,A1,Op1)|RHS], NxtVars, VarsOut, Term)
 	).
 
 build_term_([V, op(P1,A1,Op1), op(P2,A2,Op2)|Etc], VarsIn, VarsOut, Term) :-   % postfix postfix ; infix prefix
@@ -372,16 +377,20 @@ build_term_(Exp, VarsIn, _VarsOut, _Term) :-
 
 % build RHS recursively as far as possible, then return value and rest of tokens
 build_term_right_([op(P1,A1,Op1), op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term) :-
-	(op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), right)
+	% cascading prefix ops
+	op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), Ass),
+	!,
+	(Ass = right
 	 -> build_term_right_([op(P2,A2,Op2)|Etc], VarsIn, VarsOut, RHS),
 	    Term = [op(P1,A1,Op1)|RHS]
-%	 ; fail  % to build_term handling via last clause below
+	 ;  build_term_([op(P1,A1,Op1), op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term)
 	).
 
 build_term_right_([op(P1,A1,Op1), V, op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term) :-
-	not_op(V),
+	% ops with intervening value
+	not_op(V), op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), Ass),
 	!,
-	(op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), right)
+	(Ass = right
 	 -> build_term_right_([V, op(P2,A2,Op2) |Etc], VarsIn, VarsOut, RHS),
 	    Term = [op(P1,A1,Op1)|RHS]
 	 ;  build_term_([op(P1,A1,Op1), V], VarsIn, VarsOut, [LHS]),
@@ -389,9 +398,10 @@ build_term_right_([op(P1,A1,Op1), V, op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term)
 	).
 
 build_term_right_([V, op(P1,A1,Op1), op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term) :-
-	not_op(V),
+	% value then cascading ops
+	not_op(V), op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), Ass),
 	!,
-	(op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), right)
+	(Ass = right
 	 -> build_term_right_([op(P2,A2,Op2) |Etc], VarsIn, VarsOut, RHS),
 	    Term = [V, op(P1,A1,Op1) |RHS]
 	 ;  build_term_([V, op(P1,A1,Op1)], VarsIn, VarsOut, [LHS]),
@@ -399,16 +409,17 @@ build_term_right_([V, op(P1,A1,Op1), op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term)
 	).
 
 build_term_right_([V1, op(P1,A1,Op1), V2, op(P2,A2,Op2) |Etc], VarsIn, VarsOut, Term) :-
-	not_op(V1), not_op(V2),
+	% infix op ...
+	not_op(V1), not_op(V2), op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), Ass),
 	!,
-	(op_associativity(op(P1,A1,Op1), op(P2,A2,Op2), right)
+	(Ass = right
 	 -> build_term_right_([V2, op(P2,A2,Op2) |Etc], VarsIn, VarsOut, RHS),
 	    Term = [V1, op(P1,A1,Op1) |RHS]
 	 ;  build_term_([V1, op(P1,A1,Op1), V2], VarsIn, VarsOut, [LHS]),
 	    Term = [LHS,op(P2,A2,Op2)|Etc]
 	).
 
-build_term_right_(Exp, VarsIn, VarsOut, Term) :-  % error or insufficient "tokens
+build_term_right_(Exp, VarsIn, VarsOut, Term) :-  % insufficient "tokens", recurse to build the rest 
 	build_term_(Exp, VarsIn, VarsOut, Term).
 
 
