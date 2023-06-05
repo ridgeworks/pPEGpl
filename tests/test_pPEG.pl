@@ -1,6 +1,6 @@
 /*	The MIT License (MIT)
  *
- *	Copyright (c) 2021, 2022 Rick Workman
+ *	Copyright (c) 2021-2023 Rick Workman
  *
  *	Permission is hereby granted, free of charge, to any person obtaining a copy
  *	of this software and associated documentation files (the "Software"), to deal
@@ -88,21 +88,6 @@ test(sq, R = rule1("")) :-  % succeed but match nothing, Residue=Input
 	Src="rule1 = ''", Inp = "abc",
 	peg_compile(Src,G),
 	peg_parse(G,Inp,R,Inp,[incomplete(true)]).
-
-test(dq, R=rule1("a")) :-
-	parse_test("rule1 = \"a\"", "a", R, []).
-test(dq, fail) :-
-	parse_test("rule1 = \"a\"", " b ", _R, []).
-test(dq, R=rule1("a")) :-
-	parse_test("rule1 = \"\" 'a'", "a", R, []).
-test(dq, R=rule1("a")) :-
-	parse_test("rule1 = 'a' \"\"", "a", R, []).
-test(dq, R=rule1(" a \n")) :-
-	parse_test("rule1 = \" a \"", " a \n", R, []).
-test(dq, R=rule1(" a \n")) :-
-	parse_test("rule1 = \" a \"  _space_ = [ \t\n\r]*", " a \n", R, [optimise(true)]).
-test(dq, R=rule1("\n a")) :-
-	parse_test("rule1 = \" a\"  _space_ = [ \t\n\r]*", "\n a", R, [optimise(true)]).
 
 test(chs, R=rule1("c")) :-
 	parse_test("rule1 = [a-z]", "c", R, []).
@@ -210,7 +195,7 @@ test(esc, R=rule1("\n\r\t\\\u005d")) :-
 	parse_test("rule1 = '\n\r\t\\\u005d'", "\n\r\t\\\u005d", R, []).
 
 test(cws, R=rule1([text("abc"),text("def")])) :-
-	parse_test("rule1 = (text \" \")* text = [a-z]*_space_ = [ \t\n\r?]*", "abc ? def  \t", R, []).
+	parse_test("rule1 = (text _)* text = [a-z]* _ = [ \t\n\r?]*", "abc ? def  \t", R, []).
 
 test(ext, R=rule1("x")) :-
 	parse_test("rule1 = <testExt 42> 'x'", "x", R, []).
@@ -247,7 +232,7 @@ test(t_3_misc, R=s("x,x,x")) :-
 test(t_3_misc, R=s("x,,,x,,")) :-
 	parse_test("s=_x(','_x)*_x='x'/''", "x,,,x,,", R, []).
 test(t_3_misc, R=s("abc ABC aBc")) :-
-	parse_test("s=\" abc\"i*", "abc ABC aBc", R, []).
+	parse_test("s= (' '* 'abc'i)+", "abc ABC aBc", R, []).
 test(t_3_misc, R=s("\\n")) :-
 	parse_test("s='\\' [nrt]", "\\n", R, []).
 test(t_3_misc, R=date("2021-04-05")) :-

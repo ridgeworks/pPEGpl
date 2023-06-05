@@ -13,23 +13,28 @@
 
 expr_grammar({|pPEG||
 
-	expr       = (prefixOp " ")* " " term " " (postfixOp " ")* (infixOp " " expr)?
+	expr       = _ (prefixOp _)* term _ (postfixOp _)* (infixOp expr)? _
 
 	term       = number / Pexpr
 	number     = [0-9]+
 	Pexpr      = '(' expr ')'
 
-	prefixOp   = unaryOp
-	infixOp    = addOp / mulOp / expOp
+	prefixOp   = notOp / unaryOp 
+	infixOp    = disjOp / compOp /addOp / mulOp / expOp 
 	postfixOp  = postOp
 
+	notOp      = [~]
 	unaryOp    = [-+]
-
+	
+	disjOp     = [?:]
+	compOp     = [><=]
 	addOp      = [-+]
 	mulOp      = [*/]
 	expOp      = '^'
 
 	postOp     = '++' / '--'
+	
+	_          = [ \t\n\r]*     # optional whitespace
 	
 |}).
 
@@ -40,25 +45,35 @@ parse_expr(Src,Tree) :-
 	
 pratt_expr_grammar({|pPEG||
 
-	expr       = (prefixOp " ")* " " term " " (postfixOp " ")* (infixOp " " expr)?
+	expr       = (prefixOp _)* term _ (postfixOp _)* (infixOp _ expr)?
 
 	term       = number / Pexpr
 	number     = [0-9]+
 	Pexpr      = '(' expr ')'
 
-	prefixOp   = unaryOp_6R
-	infixOp    = addOp_3L / mulOp_4L / expOp_5R
-	postfixOp  = postOp_6L
+	prefixOp   = notOp_2R / unaryOp_7R 
+	infixOp    = disjOp_1L / compOp_3L / addOp_4L / mulOp_5L / expOp_6R
+	postfixOp  = postOp_7L
 
-	unaryOp_6R = [-+]
+	notOp_2R   = [~]
+	unaryOp_7R = [-+]
 
-	addOp_3L   = [-+]
-	mulOp_4L   = [*/]
-	expOp_5R   = '^'
+	disjOp_1L  = [?:]
+	compOp_3L  = [><=]
+	addOp_4L   = [-+]
+	mulOp_5L   = [*/]
+	expOp_6R   = '^'
 
-	postOp_6L  = '++' / '--'
+	postOp_7L  = '++' / '--' # / '-'
+	
+	_          = [ \t\n\r]*
 
 |}).
+
+% parse a source string using pratt_expr_grammar/1 
+pratt_parse_expr(Src,Tree) :-  
+	pratt_expr_grammar(EG),
+	peg_parse(EG,Src,Tree).
 
 :- arithmetic_function(user:(++ /1)).
 ++(N,R) :- arithmetic_expression_value(N,V), R is V+1.
@@ -66,13 +81,9 @@ pratt_expr_grammar({|pPEG||
 :- arithmetic_function(user:(-- /1)).
 --(N,R) :- arithmetic_expression_value(N,V), R is V-1.
 
-% parse a source string using pratt_expr_grammar/1 
-pratt_parse_expr(Src,Tree) :-  
-	pratt_expr_grammar(EG),
-	peg_parse(EG,Src,Tree).
 
 % convert a pratt tree of an expression in pratt_expr_grammar/1 to an arithmetic term
-pratt_to_term(number(S), N) :- !,
+pratt_to_term(number(S), N) :- !,            % terminal value
 	number_string(N,S).
 pratt_to_term('Pexpr'([Pratt]), Exp) :- !,
 	pratt_to_term(Pratt,Exp).

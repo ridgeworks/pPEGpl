@@ -101,6 +101,14 @@ node_to_term('QQuote'([SynExp,qcontent(Content)]), Vars, NxtVars, Term) :- !,
 	 ;  Syntax =.. [SyntaxName|SyntaxArgs], % no defined handler - generate a QQ definition
 	    Term = '$quasi_quotation'(SyntaxName,Content,SyntaxArgs,NxtVars)
 	).
+node_to_term('Dict'([Tag|Pairs]), Vars, NxtVars, Term) :- !,
+	node_to_term(Tag,Vars,Vars1,DTag),
+	dict_pairs_(Pairs,Vars1,NxtVars,DPairs),
+	dict_create(Term,DTag,DPairs).
+node_to_term(intkey(String), Vars, Vars, Num) :- !,
+	string_number_(String,Num),
+	current_prolog_flag(max_tagged_integer,Max),
+	abs(Num) =< Max. 
 node_to_term(atom(Raw), Vars, Vars, Atom) :- !,
 	(sub_string(Raw,0,1,_,"'")        % strip outer quotes if present
 	 -> sub_string(Raw,1,_,1,Raw1),   % if quoted process escapes
@@ -180,6 +188,20 @@ args_terms(['Tail'([Node])],VarsIn,VarsOut,Term) :- !,
 args_terms([Arg|Args],VarsIn,VarsOut,[Term|Terms]) :-
 	node_to_term(Arg,VarsIn,NxtVars,Term),
 	args_terms(Args,NxtVars,VarsOut,Terms).
+
+% dict key:value pairs
+dict_pairs_([],Vars,Vars,[]).
+dict_pairs_([pair([Key,Value])|Pairs],Vars,NxtVars,[DKey:DVal|DPairs]):-
+	(node_to_term(Key,Vars,Vars1,DKey)
+	 -> true
+	 ;  print_message(informational, prolog_parser(bad_key(Key))),
+	    fail 
+	),
+	node_to_term(Value,Vars1,Vars2,DVal),	
+	dict_pairs_(Pairs,Vars2,NxtVars,DPairs).
+
+prolog:message(prolog_parser(bad_key(Key))) -->  % DCG
+	[ "prolog_parser Error, invalid dict key: ~p" - [Key] ].
 
 % reduce escape sequences
 /*  _esc   = '\\' ( [\\abcefnrstv'"`] 

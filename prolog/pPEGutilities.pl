@@ -3,7 +3,7 @@
 %
 /*	The MIT License (MIT)
  *
- *	Copyright (c) 2021 Rick Workman
+ *	Copyright (c) 2021-23 Rick Workman
  *
  *	Permission is hereby granted, free of charge, to any person obtaining a copy
  *	of this software and associated documentation files (the "Software"), to deal
@@ -25,21 +25,17 @@
  */
 :- module(pPEGutilities,[
 	ptree_json_term/2,   % map a PTree to/from a "new" JSON term
-	ptree_pratt/2        % map a pTree to a pratt tree using op rule bindings convention
+	ptree_pratt/2,       % map a pTree to a pratt tree using op rule bindings convention
+	ptree_printstring/2, % pretty print string for a ptree
+	ptree_printstring/3  % pretty print string for a ptree specifying a left margin indent.
 ]).
 
-:-  (current_prolog_flag(optimise,Opt),
-	 nb_setval('pPEGutilities:temp',Opt),      % save current value to restore on :- initialization/1
-	 set_prolog_flag(optimise,true)            % mainly optimizes arithmetic
-	).
-
-restore_optimise :-  % restore "optimise" flag at :- initialization.
-	nb_current('pPEGutilities:temp',Opt) -> set_prolog_flag(optimise,Opt) ;  true.
+:-set_prolog_flag(optimise,true).  % mainly optimizes arithmetic (module scope only)
 
 %
 % Many pPEG implementations specify a ptree using a JSON format. ptree_json_term/2 in
 %	conjunction with library(http/json) can be used to covert the Prolog representation
-%	of a ptree to the "new" JSON format. On input, string vales must be left as strings
+%	of a ptree to the "new" JSON format. On input, string values must be left as strings
 %	using the "value_string_as(string)" option if necessary.
 %
 ptree_json_term(PTree,[Name, Value]) :-
@@ -234,4 +230,67 @@ pratt_op(Op, '$pratt_op'(OpSym,OpL,OpR)) :-
 	atom_string(OpSym,SOp).                      % atom form for functor, string(SOp) implied
 
 
-:- initialization(restore_optimise,now).
+%
+% ptree_printstring/N maps any ptree to a "pretty printed" string.
+% 
+% ptree_printstring/3 permits the use of the `Indent` argument, a string 
+% forming the prefix of all lines. 
+% ptree_printstring/2 defines a default prefix of ""
+% An example:
+/*
+?- peg_parse(pPEG,"r1 = [a-z] [A-zA-z]*",Tree),ptree_printstring(Tree,"\t",S),write(S).
+	Peg
+	└─rule
+	  ├─id "r1"
+	  └─seq
+	    ├─chs "[a-z]"
+	    └─rep
+	      ├─chs "[A-zA-z]"
+	      └─sfx "*"
+Tree = 'Peg'([rule([id("r1"), seq([chs("[a-z]"), rep([chs("[A-zA-z]"), sfx("*")])])])]),
+S = "\tPeg\n\t└─rule\n\t  ├─id \"r1\"\n\t  └─seq\n\t    ├─chs \"[a-z]\"\n\t    └─rep\n\t      ├─chs \"[A-zA-z]\"\n\t      └─sfx \"*\"\n".
+*/
+ptree_printstring(PTree, PPstring) :-               % Arity 2
+	ptree_printstring(PTree, "", PPstring).         % null indent
+	
+ptree_printstring(PTree, Indent, PPstring) :-       % Arity 3
+	ptree_printstring(PTree, [Indent], T/T, PPlist/[]),
+	atomics_to_string(PPlist, PPstring).            % build final string result
+	
+ptree_printstring(PTree, Indent, StrIn, StrOut) :-  % Arity 4
+	PTree =.. [Name, Val],                          % decompose to name and value
+	ptree_printstring_(Name, Val, Indent, StrIn, StrOut).
+
+ptree_printstring_(Name, AString, Indent, Str/Tail, Str/Etc) :-   % ptree value: string
+	string(AString), !,
+	format(string(OString),"~p",[AString]),  % quoted and escaped
+	indent_term(Indent,[Name," ",OString,"\n"|Etc],Tail).
+ptree_printstring_(Name, Children, Indent, Str/Tail, Str/Etc) :-  % ptree value: [children..]
+	%  is_list(Children),
+	indent_term(Indent,[Name,"\n"|Nxt],Tail),
+	new_indent(Indent,NxtIndent),
+	ptree_children(Children,NxtIndent,Str/Nxt,Str/Etc).     % add children
+	
+ptree_children([], _, Str, Str).                            % EOL, No child case
+ptree_children([Term], [_|Indent], Str/Nxt, Str/Etc) :- !,  % EOL -> different prefix
+	left_crn(LC),
+	ptree_printstring(Term, [LC|Indent], Str/Nxt, Str/Etc).
+ptree_children([Term|Terms], Indent, Str/Nxt1, Str/Etc) :- 
+	ptree_printstring(Term, Indent, Str/Nxt1, Str/Nxt2),
+	ptree_children(Terms, Indent, Str/Nxt2, Str/Etc).
+
+indent_term([],Tail,Tail).
+indent_term([I|Is],In,Tail) :-
+	indent_term(Is,[I|In],Tail).
+
+new_indent([LT|Indent], New) :- left_tee(LT), !,  %  "|-" ==> "| |-"
+	vertical(Vrt), New = [LT,Vrt|Indent].
+new_indent([LC|Indent], New) :- left_crn(LC), !,  %  "+-" ==> "  |-"
+	left_tee(LT), space(SP), New = [LT,SP|Indent].
+new_indent(Indent,[LT|Indent]) :-                 %  Any ==> Any "|-"  
+	left_tee(LT).
+
+left_tee("\u251C\u2500").  % "|-"
+left_crn("\u2514\u2500").  % "+-"
+vertical("\u2502 ").       % "| "
+space("  ").               % "  "
