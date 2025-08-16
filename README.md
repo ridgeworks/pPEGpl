@@ -1,6 +1,6 @@
 ## Pack `pPEG` for SWI-Prolog
 
-Note: This is version 2 of `pPEG` for SWI-Prolog and has some non-upwards compatible changes from version 1. See details in **Getting Started** at the end of this ReadMe document.
+Note: This is version 2.1 of `pPEG` for SWI-Prolog which is backwards compatible with 2.0 but has some non-upwards compatible changes from version 1. See details in **Getting Started** at the end of this ReadMe document.
 
 #### What is *PEG*?
 
@@ -243,7 +243,20 @@ The other common use of double quotes in version 1 grammars was to define litera
 
 The other non-upwards compatible change is dropping the double escape character in literals and character sets, i.e., `'\\'` representing a single backslash is now just `'\'`. The only escape sequences now recognized are '`\t`', '`\n`', '`\r`', '`\uFFFF`', and '`\UFFFFFFFF`' (where `F` is any hex digit).
  
-These changes were made to simplify the pPEG grammar and to facilitate portability of grammars between different languages. Version 1 will continue to be available [here](https://github.com/ridgeworks/pPEGpl/releases/tag/v1.0.3). 
+These changes were made to simplify the pPEG grammar and to facilitate portability of grammars between different languages. Version 1 will continue to be available [here](https://github.com/ridgeworks/pPEGpl/releases/tag/v1.0.3).
+
+##### Version 2.1 Enhancements for Porting Grammars
+
+Version 2.1 of `pPEG` for SWI-Prolog is backwards compatible with version 2 but includes the following enhancements which may help in porting other PEG (and non-PEG) grammars to `pPEG`. These enhancements include:
+1. Alternative rule types specified by definition operator rather than rule name. This helps avoid global rule name changes when porting other grammars to *pPEG*. Supported operators include:
+    - `=` same as version 2.0
+    - `:` anonymous rule (like a rule with a name beginning with '_')
+    - `:=` always a parent node in *ptree* (like a rule bginning with uppercase letter) 
+    - `=:` always a leaf node in the *ptree*
+2. A '`.`' on the left hand side of a rule will match any character (equivalent to '`~[]`').
+3. In addition to '`\u`' and '`\U`' escapes, two hex digit escapes can be expressed using '`x`' as in '`\xFF`.'
+
+See[*pPEG*][pPEGrepo] for more details.
 
 [pPEGrepo]: https://github.com/pcanz/pPEG
 [pPEGref]: https://ridgeworks.github.io/pPEGpl/pPEG_API_Guide.html

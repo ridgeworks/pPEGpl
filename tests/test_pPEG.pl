@@ -1,6 +1,6 @@
 /*	The MIT License (MIT)
  *
- *	Copyright (c) 2021-2023 Rick Workman
+ *	Copyright (c) 2021-2025 Rick Workman
  *
  *	Permission is hereby granted, free of charge, to any person obtaining a copy
  *	of this software and associated documentation files (the "Software"), to deal
@@ -56,11 +56,11 @@ test(identity, PG='Peg'(PRules,_)) :-  % if this works, many things are already 
 	peg_compile(S,PG,[optimise(false)]),
 	peg_parse(PG,S,'Peg'(PRules)).
 
-test(basic_rule, G='Peg'([rule([id("rule1"), id("Rule2_")])],_)) :-
+test(basic_rule, G='Peg'([rule([id("rule1"), def("="), id("Rule2_")])],_)) :-
 	S="rule1 = Rule2_",
 	peg_compile(S,G,[optimise(false)]).
 
-test(basic_rule_O, G='Peg'([rule(rule1, call_O(rule('Rule2_', _)))],_)) :-
+test(basic_rule_O, G='Peg'([rule(rule1, dynamic, call_O(rule('Rule2_', _, _)))],_)) :-
 	S="rule1 = Rule2_",
 	peg_compile(S,G,[optimise(true)]).
 
@@ -106,6 +106,9 @@ test(chs, fail) :-
 test(chs, fail) :-
 	parse_test("rule1 = []", "x", _R, []).
 
+test(dot, R=rule1("c")) :-
+	parse_test("rule1 = .", "c", R, []).
+
 test(name, R=rule2("a")) :-
 	parse_test("rule1 = rule2\nrule2='a'", "a", R, []).
 test(name, fail) :-
@@ -116,6 +119,13 @@ test(name, R="a") :-
 	parse_test("_rule1 = rule2\nrule2='a'", "a", R, []).
 test(name, R='Rule1'([rule2("a")])) :-
 	parse_test("Rule1 = rule2\nrule2='a'", "a", R, []).
+
+test(defs, R="a") :-
+	parse_test("rule1 : rule2\nrule2='a'", "a", R, []).
+test(defs, R='rule1'([rule2("a")])) :-
+	parse_test("rule1 := rule2\nrule2='a'", "a", R, []).
+test(defs, R='rule1'("a")) :-
+	parse_test("rule1 =: rule2\nrule2='a'", "a", R, []).
 
 test(seq, R=rule1("ab")) :-
 	parse_test("rule1 = 'a' 'b'", "ab", R, []).
@@ -191,8 +201,12 @@ test(group, R=rule1("acd")) :-
 test(rec, R=='Err') :-
 	catch(parse_test("rule1=rule2\nrule2=rule1","",R,[]),error(resource_error(_),_),R='Err').
 
+test(esc, R=rule1("\n\r\t\\\x5d")) :-
+	parse_test("rule1 = '\n\r\t\\\x5d'", "\n\r\t\\\u005d", R, []).
 test(esc, R=rule1("\n\r\t\\\u005d")) :-
 	parse_test("rule1 = '\n\r\t\\\u005d'", "\n\r\t\\\u005d", R, []).
+test(esc, R=rule1("\n\r\t\\\U0000005d")) :-
+	parse_test("rule1 = '\n\r\t\\\U0000005d'", "\n\r\t\\\u005d", R, []).
 
 test(cws, R=rule1([text("abc"),text("def")])) :-
 	parse_test("rule1 = (text _)* text = [a-z]* _ = [ \t\n\r?]*", "abc ? def  \t", R, []).

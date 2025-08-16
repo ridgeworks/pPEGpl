@@ -40,4 +40,13 @@ Ts = [
 
 ?- directory_files(".",Files),forall(member(F,Files),parse_file(F,_)).
 
+  operators for library:
+
+op(1150, fx, record).
+op(200, fy, @).
+op(900, xfx, @).
+op(10, fx, #).
+  and from XML package
+op(400, fx, //).
+
 */
