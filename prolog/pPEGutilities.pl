@@ -3,7 +3,7 @@
 %
 /*	The MIT License (MIT)
  *
- *	Copyright (c) 2021-23 Rick Workman
+ *	Copyright (c) 2021-26 Rick Workman
  *
  *	Permission is hereby granted, free of charge, to any person obtaining a copy
  *	of this software and associated documentation files (the "Software"), to deal
@@ -25,6 +25,7 @@
  */
 :- module(pPEGutilities,[
 	ptree_json_term/2,   % map a PTree to/from a "new" JSON term
+	ptree_size/2,        % counts the number of nodes in a pTree
 	ptree_pratt/2,       % map a pTree to a pratt tree using op rule bindings convention
 	ptree_printstring/2, % pretty print string for a ptree
 	ptree_printstring/3  % pretty print string for a ptree specifying a left margin indent.
@@ -53,6 +54,21 @@ ptree_val_json_value([], []) :- !.  % ! when first arg a var
 ptree_val_json_value([PNode|PNodes], [JNode|Jnodes]) :-
 	ptree_json_term(PNode, JNode),
 	ptree_val_json_value(PNodes, Jnodes).
+
+%
+% ptree_size/2 counts the number of non-terminal nodes in a pTree
+%
+ptree_size(PTree,Size) :- 	
+	PTree =.. [_PName,Value],
+	ptree_children_size_(Value,0,CSize),
+ 	Size is CSize+1. % chidren size + this node 
+	
+ptree_children_size_(Terminal,_,0) :- string(Terminal), !.
+ptree_children_size_([],Size,Size).
+ptree_children_size_([C|Cs],In,Size) :- 
+	ptree_size(C,CSize),
+	Out is In+CSize,
+	ptree_children_size_(Cs,Out,Size).
 
 %
 % ptree_pratt/2 maps a ptree produced using a grammar with Pratt rule naming conventions
@@ -252,11 +268,11 @@ S = "\tPeg\n\t└─rule\n\t  ├─id \"r1\"\n\t  └─seq\n\t    ├─chs \"
 */
 ptree_printstring(PTree, PPstring) :-               % Arity 2
 	ptree_printstring(PTree, "", PPstring).         % null indent
-	
+
 ptree_printstring(PTree, Indent, PPstring) :-       % Arity 3
 	ptree_printstring(PTree, [Indent], T/T, PPlist/[]),
 	atomics_to_string(PPlist, PPstring).            % build final string result
-	
+
 ptree_printstring(PTree, Indent, StrIn, StrOut) :-  % Arity 4
 	PTree =.. [Name, Val],                          % decompose to name and value
 	ptree_printstring_(Name, Val, Indent, StrIn, StrOut).
@@ -270,7 +286,7 @@ ptree_printstring_(Name, Children, Indent, Str/Tail, Str/Etc) :-  % ptree value:
 	indent_term(Indent,[Name,"\n"|Nxt],Tail),
 	new_indent(Indent,NxtIndent),
 	ptree_children(Children,NxtIndent,Str/Nxt,Str/Etc).     % add children
-	
+
 ptree_children([], _, Str, Str).                            % EOL, No child case
 ptree_children([Term], [_|Indent], Str/Nxt, Str/Etc) :- !,  % EOL -> different prefix
 	left_crn(LC),

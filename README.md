@@ -251,7 +251,7 @@ Version 2.1 of `pPEG` for SWI-Prolog is backwards compatible with version 2 but 
 1. Alternative rule types specified by definition operator rather than rule name. This helps avoid global rule name changes when porting other grammars to *pPEG*. Supported operators include:
     - `=` same as version 2.0
     - `:` anonymous rule (like a rule with a name beginning with '_')
-    - `:=` always a parent node in *ptree* (like a rule bginning with uppercase letter) 
+    - `:=` always a parent node in *ptree* (like a rule beginning with uppercase letter) 
     - `=:` always a leaf node in the *ptree*
 2. A '`.`' on the left hand side of a rule will match any character (equivalent to '`~[]`').
 3. In addition to '`\u`' and '`\U`' escapes, two hex digit escapes can be expressed using '`x`' as in '`\xFF`.'

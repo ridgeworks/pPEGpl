@@ -3,7 +3,7 @@
 %
 /*	The MIT License (MIT)
  *
- *	Copyright (c) 2021-2025 Rick Workman
+ *	Copyright (c) 2021-2026 Rick Workman
  *
  *	Permission is hereby granted, free of charge, to any person obtaining a copy
  *	of this software and associated documentation files (the "Software"), to deal
@@ -33,13 +33,11 @@
 	 pPEG/4                 % quasi-quotation hook for pPEG
 	]).
 
-version("2.1.0").
-
-:- version(pPEG(versionInfo)).      % add message to system version
+version("2.1.1").
 
 :- use_module(library(strings),[string/4]).         % for quasi-quoted strings
 :- use_module(library(lists),[reverse/2]).          % gen calling path in error msgs
-:- use_module(library(prolog_wrap)).                % for tracing (see peg_trace/0)
+:- use_module(library(prolog_wrap)).                % for tracing and parse modes
 :- use_module(library(option),[option/3]).          % for option list processing
 :- use_module(library(pcre),[re_matchsub/4]).       % uses a regular expression for error & trace output
 :- use_module(library(quasi_quotations), [          % pPEG as quasi-quotation
@@ -55,7 +53,7 @@ peg_grammar({|string||
 	Peg   = _ rule+
 	rule  = id _ def _ alt
 	def   = '=' ':'? / ':' '='?
-	
+
 	alt   = seq ('/'_ seq)*
 	seq   = rep+
 	rep   = pre sfx? _
@@ -115,9 +113,11 @@ debug_peg_trace(FString,Args) :- debug(pPEG(trace),FString,Args).
 
 % called from :- initialization.
 init_peg :-
+	'$toplevel':version(pPEG(versionInfo)),           % add message to system version
+	print_message(informational, pPEG(versionInfo)),  % and output
 	foreach((nb_current(Key,_), atom_concat('pPEG:',_,Key)), nb_delete(Key)),  % clear pPEG globals
-	nodebug(pPEG(trace)),              % init trace
-	bootstrap_grammar.                 % initial load
+	nodebug(pPEG(trace)),                             % init trace
+	bootstrap_grammar.                                % initial load
 
 user:exception(undefined_global_variable,'pPEG:$pPEG',retry) :-
 	bootstrap_grammar.                 % support multi-threads (need copy for each thread)              
@@ -178,16 +178,13 @@ peg_parse(GrammarSpec, Input, Result, Residue, OptionList) :-
 	peg_setup_parse_(GrammarSpec,Input,Vrbse,TRules,Env,Eval),  % setup initial Env and Eval
 	(eval_(Eval, Env, Input, 0, PosOut, Result0)            % parse using Eval
 	 -> (Result0 = [] -> sub_string(Input,0,PosOut,_,Result) ; Result = Result0)  % parse successful, map [] to matched
-	 ;  error_info(Env,_,ErrorInfo),                        % parse unsuccessful
-	    peg_fail_msg(peg(errorinfo(Input,ErrorInfo,"")),Vrbse) % fail with message
+	 ;  peg_diagnose_fail(Vrbse, Eval, Env, Input, 0, "")   % parse unsuccessful
 	),
 	(string_length(Input,PosOut)                            % did parse consume all input?
 	 -> Residue = ""                                        % yes, set residue to empty
 	 ;  (Incomplete == true                                 % no, incomplete allowed?
 	     -> sub_string(Input,PosOut,_,0,Residue)            % yes, set Residue to remaining
-	     ;  \+eval_(Eval, Env, Input, PosOut, _, _),        % rerun failed parse on residue ...
-	        error_info(Env,_,ErrorInfo),                    % just to get error info
-	        peg_fail_msg(peg(errorinfo(Input,ErrorInfo,"fell short, (?)")),Vrbse)  % fail with message
+	     ;  peg_diagnose_fail(Vrbse, Eval, Env, Input, PosOut, "fell short, (?)")  % parse unsuccessful
 	    )
 	).
 
@@ -210,11 +207,8 @@ peg_setup_parse_(GrammarSpec,Input,Vrbse,TRules,@(Grammar,[],0,([],[]),PEnv),Eva
 	    ;  peg_fail_msg(peg(argError('Grammar',GrammarSpec)),Vrbse)
 	   )
 	),
+	PEnv = (@([GName],0,id(GName)), ""),           % init persistent error info and tracing indent
 	peg_add_tracing(TRules,Grammar0,Grammar),      % add required tracing
-	(Vrbse == normal                               % init persistent environment
-	 -> PEnv = (@([GName],0,id(GName)), "")        % error info and indent (for tracing)
-	 ;  PEnv = (@(), "")
-	),
 	Grammar = [FirstRule|_],                       % first rule
 	(FirstRule = rule([Eval|_])                    % GName is name of first rule
 	 -> Eval = id(GName)                           % non-optimized version: id(Name)
@@ -222,23 +216,59 @@ peg_setup_parse_(GrammarSpec,Input,Vrbse,TRules,@(Grammar,[],0,([],[]),PEnv),Eva
 	    arg(1,FirstRule,GName)
 	).
 
-% efficient way of hiding some details of environment structure using goal_expansion/2
+peg_diagnose_fail(normal, Eval, Env, Input, PosIn, Msg) :-  % Vrbse = normal -> rerun in diagnostic mode
+	wrap_eval_fail_(EvPred,Evlabel),           % wrap eval_fail to generate error info
+	wrap_get_error_info(EiPred,Eilabel),       % wrap get_error_info and set_error_info
+	wrap_set_error_info(UeiPred,Ueilabel),
+	wrap_build_ptree(BptPred,BPtlabel),        % wrap build_ptree to discard (unused) tree
+	(eval_(Eval, Env, Input, PosIn, _PosOut, _Result)  % execute eval to get diagnostic info
+	; true
+	), !,
+	get_error_info(Env,ErrorInfo),
+	unwrap_predicate(BptPred, BPtlabel),
+	unwrap_predicate(UeiPred, Ueilabel),
+	unwrap_predicate(EiPred, Eilabel),
+	unwrap_predicate(EvPred, Evlabel),
+	peg_fail_msg(peg(errorinfo(Input,ErrorInfo,Msg)),normal). % fail with message
+
+% Abstraction of environment structure use get's and set's
 % persistent environment not trailed - contains latest error info and trace indentation
-% Note: arg/3 calls are handled in VM if last argument is a "first variable".
-goal_expansion(persistent_env_(Env,PEnv), arg(5,Env,PEnv)).   % SWIP inline optimization
-goal_expansion(grammar_(Env,Rules),       arg(1,Env,Rules)).  % SWIP inline optimization
-goal_expansion(error_info(Env,PEnv,ErrorInfo),                % SWIP inline optimization
-	 (persistent_env_(Env,PEnv), arg(1,PEnv,ErrorInfo))
-	).
-goal_expansion(update_error_info(PEnv,ErrorInfo),             % SWIP inline optimization
-	  nb_linkarg(1,PEnv,ErrorInfo)
-	).
-% if no goal expansion
-grammar_(Env,Rules)        :- arg(1,Env,Rules).
-context_(Env,Ctxt)         :- arg(4,Env,Ctxt).
-persistent_env_(Env,PEnv)  :- arg(5,Env,PEnv). 
-error_info(Env,PEnv,ErrorInfo)    :- persistent_env_(Env,PEnv), arg(1,PEnv,ErrorInfo).
-update_error_info(PEnv,ErrorInfo) :- nb_linkarg(1,PEnv,ErrorInfo).
+% Exploits arg/3 calls are handled by `b_arg_` VM instruction if last argument is a "first variable".
+get_grammar(Env,Rules)        :- arg(1,Env,Rules).
+get_name_stack(Env,Names)     :- arg(2,Env,Names_), Names = Names_.
+get_context(Env,Ctxt)         :- arg(4,Env,Ctxt).
+
+get_high_water_mark(Env,HWM)  :-
+	arg(5,Env,PEnv),
+	arg(1,PEnv,ErrorInfo),
+	arg(2,ErrorInfo,HWM_), HWM = HWM_.                % two steps for arg/3 optimization
+
+get_error_info(_Env,_ErrorInfo).                      % build mode
+
+diag_get_error_info(Env,ErrorInfo) :-                 % diagnose mode
+	arg(5,Env,PEnv), arg(1,PEnv,ErrorInfo_), ErrorInfo = ErrorInfo_.
+
+wrap_get_error_info(pPEG:get_error_info/2, Label) :-
+	Label = 'pPEG:get_error_info',
+	wrap_predicate(pPEG:get_error_info(Env,ErrorInfo), 
+	               Label,
+	               _,
+	               diag_get_error_info(Env,ErrorInfo)).
+
+set_error_info(_Env,_ErrorInfo).                      % build mode
+
+diag_set_error_info(Env,ErrorInfo) :-                 % diagnose mode
+	arg(5,Env,PEnv), nb_linkarg(1,PEnv,ErrorInfo).
+
+wrap_set_error_info(pPEG:set_error_info/2, Label) :-
+	Label = 'pPEG:set_error_info',
+	wrap_predicate(pPEG:set_error_info(Env,ErrorInfo), 
+	               Label,
+	               _,
+	               diag_set_error_info(Env,ErrorInfo)).
+
+get_msg_indent(Env,Indent) :- arg(5,Env,PEnv), arg(2,PEnv,Indent_), Indent = Indent_.
+set_msg_indent(Env,Indent) :- arg(5,Env,PEnv), nb_linkarg(2,PEnv,Indent).
 
 % messaging and definitions
 peg_fail_msg(Msg, normal) :-                       % only print if verbose = normal
@@ -279,7 +309,7 @@ prolog:message(peg(scheme(RuleName,Scheme))) -->  % DCG
 % lookup previous match of rule Name in Env
 %
 peg_lookup_previous(Name,Env,Match) :-
-	arg(4,Env,Ctxt),                         % Env[4] = Ctxt for maintaining prior matches
+	get_context(Env,Ctxt),                   % Ctxt retains prior matches
 	(var(Name)
 	 -> lookup_match_(Ctxt,RName,Match),     % most recent match
 	    atom_string(RName,Name)
@@ -299,7 +329,7 @@ lookup_match_((Matches,Parent),Name,Match) :-
 %
 eval_(id(Name), Env, Input, PosIn, PosOut, R) :-                % id "instruction"
 	atom_string(PName,Name),                     % map to call_O(Rule), requires atom Name
-	arg(1,Env,Grammar),                          % Env[1] = Grammar
+	get_grammar(Env,Grammar),                    % Env[1] = Grammar
 	(memberchk(rule([id(Name), def(Def), Exp]), Grammar)   % linear search, can be slow
 	 -> scheme_treatment(Def,Name,Treat),        % defined for all valid
 	    eval_(call_O(rule(PName,Treat,Exp)), Env, Input, PosIn, PosOut, R) % continue with call_O
@@ -308,12 +338,10 @@ eval_(id(Name), Env, Input, PosIn, PosOut, R) :-                % id "instructio
 	). 
 
 eval_(alt(Ss), Env, Input, PosIn, PosOut, R) :-                 % alt "instruction"
-	error_info(Env,PEnv,ErrorInfo),
+	get_error_info(Env,ErrorInfo),
 	(alt_eval(Ss, Env, Input, PosIn, PosOut, R)
-	 -> update_error_info(PEnv,ErrorInfo)             % success so restore error info
-	 ;  error_info(Env,_,FErrorInfo),                 % failure error Info
-	    arg(2,FErrorInfo,FHWM),
-	    PosIn == FHWM,                                % if nothing consumed before error
+	 -> set_error_info(Env,ErrorInfo)                 % success so restore error info
+	 ;  get_high_water_mark(Env,PosIn),               % if nothing consumed before error
 	    eval_fail_(alt(Ss),Env,PosIn)                 % back up error context to this rule
 	).
 
@@ -325,17 +353,16 @@ eval_(rep([Exp, ROp]), Env, Input, PosIn, PosOut, R) :-         % rep "instructi
 	eval_(rep_O(Exp, Min, Max), Env, Input, PosIn, PosOut, R).
 
 eval_(pre([pfx(POp), Exp]), Env, Input, PosIn, PosOut, []) :-   % pre "instruction"
-	error_info(Env,PEnv,ErrorInfo),
+	get_error_info(Env,ErrorInfo),
 	(prefix_eval(POp, Exp, Env, Input, PosIn, PosOut) % lookahead eval
-	 -> update_error_info(PEnv,ErrorInfo)             % success so restore error info
-	 ;  update_error_info(PEnv,ErrorInfo),            % fail, ignore any lookahead failure ...
+	 -> set_error_info(Env,ErrorInfo)                 % success so restore error info
+	 ;  set_error_info(Env,ErrorInfo),                % fail, ignore any lookahead failure ...
 	    eval_fail_(pre([pfx(POp), Exp]),Env,PosIn)    % and backtrack with new info
 	).
 
 eval_(quote(S), Env, Input, PosIn, PosOut, []) :-               % quote "instruction"
-	(sub_string(S,_,1,0,"i")                  % case insensitive match test
-	 -> sub_string(S,0,_,1,S1),               % strip i
-	    literal_match_(S1,SMatch),            % string to match
+	(string_concat(S1,'i',S)                  % case insensitive match test
+	 -> literal_match_(S1,SMatch),            % string to match
 	    string_upper(SMatch,UMatch),
 	    string_length(SMatch,Len),
 	    sub_string(Input,PosIn,Len,_,Match),
@@ -375,8 +402,7 @@ eval_(call_O(rule(Name, Treat, Exp)), @(Grammar,Names,Dep,Ctxt,PEnv), Input, Pos
 	 ;  Match = slice(Input,PosIn,PosOut),  % Input slice matched
 	    % add Match to siblings in context (undo on backtrack)
 	    arg(1,Ctxt,Matches), setarg(1,Ctxt,[(Name,Match)|Matches]),
-	    flatten_(Res,[],RRs),               % flatten args list
-	    build_ptree(Treat,RRs,Match,Name,R) % and build
+	    build_ptree(Treat,Res,Match,Name,R) % and build
 	).
 
 eval_(rep_O(Exp, Min, Max), Env, Input, PosIn, PosOut, R) :-    % rep_O "instruction"
@@ -393,7 +419,7 @@ eval_(quote_O(Case,Match), Env, Input, PosIn, PosOut, []) :-    % quote_O "instr
 
 eval_(class_O(In,MChars), Env, Input, PosIn, PosOut, []) :-     % class_O "instruction"
 	(sub_atom(Input, PosIn, 1, _, R),         % input char, fails if end of Input
- 	 chars_in_match(MChars,R,In)              % character in/notin set
+ 	 chars_in_match(MChars,In,R)              % character in/notin set
 	 -> PosOut is PosIn+1                     % match succeeded, consume 1 char
 	 ;  eval_fail_(class_O(In,MChars),Env,PosIn) 
 	).
@@ -401,17 +427,12 @@ eval_(class_O(In,MChars), Env, Input, PosIn, PosOut, []) :-     % class_O "instr
 eval_(trace(Rule), Env, Input, PosIn, PosOut, R) :-             % trace "instruction"
 	% start tracing this rule
 	(debugging(pPEG(trace),true)
-	 -> eval_(call_O(Rule),Env,Input,PosIn,PosOut,R)  % already tracing, just call_O
-	 ;  current_prolog_flag(debug,DF),  % save debug state
-	    peg_trace,                      % enable tracing
-	    persistent_env_(Env,PEnv),
-	    nb_linkarg(2,PEnv," "),         % reset indent
-	    (eval_(call_O(Rule),Env,Input,PosIn,PosOut,R)  % call_O with tracing enabled
-	     -> peg_notrace,                % success, disable tracing and return a result
-	        set_prolog_flag(debug,DF)   % restore saved debug state
-	     ;  peg_notrace,                % fail, first disable tracing
-	        set_prolog_flag(debug,DF),  % restore saved debug state
-	        fail
+	 -> eval_(call_O(Rule),Env,Input,PosIn,PosOut,R)       % already tracing, just call_O
+	 ;  set_msg_indent(Env," "),                           % reset indent
+	    setup_call_cleanup(
+	        peg_trace,
+	        eval_(call_O(Rule),Env,Input,PosIn,PosOut,R),  % call_O with tracing enabled
+	        peg_notrace
 	    )
 	).
 
@@ -419,14 +440,22 @@ eval_(trace(Rule), Env, Input, PosIn, PosOut, R) :-             % trace "instruc
 % Support for VM instructions
 %
 
-% capture error info and fail
-eval_fail_(Op,Env,PosIn) :-
-	error_info(Env,PEnv,ErrorInfo),
-	arg(2,ErrorInfo,HWM),    % exploit optimized arg/3 
-	PosIn >= HWM,            % new high water mark ?
-	arg(2,Env,Names),
-	update_error_info(PEnv,@(Names,PosIn,Op)),
+% hook for dignostic capture, build mode avoids nb_* which impedes failure driven memory recovery
+eval_fail_(_Op,_Env,_PosIn) :- fail.                       % build mode
+
+diag_eval_fail_(Op,Env,PosIn) :-                           % diagnose mode
+	get_high_water_mark(Env,HWM),
+	PosIn >= HWM,                                          % new high water mark ?
+	get_name_stack(Env,Names),
+	set_error_info(Env,@(Names,PosIn,Op)),
 	fail.
+
+wrap_eval_fail_(pPEG:eval_fail_/3, Label) :-
+	Label = 'pPEG:eval_fail_',
+	wrap_predicate(pPEG:eval_fail_(Op,Env,PosIn), 
+	               Label,
+	               _,
+	               diag_eval_fail_(Op,Env,PosIn)).
 
 
 % alt instruction
@@ -437,7 +466,6 @@ alt_eval([S|Ss], Env, Input, PosIn, PosOut, R) :-
 
 
 % seq instruction
-% responsible for capturing error info on failure 
 seq_eval([], _Start, _Env, _Input, PosIn, PosIn, []).
 seq_eval([S|Ss], Start, Env, Input, PosIn, PosOut, R) :-
 	eval_(S, Env, Input, PosIn, PosNxt, Re),                % try S
@@ -488,14 +516,14 @@ prefix_eval("~", Exp, Env, Input, PosIn, PosOut) :- %'~'
 	PosOut is PosIn+1.                                % consume 1 character
 
 
-% sq instruction
+% quote instruction
 % strip outer quotes and map escapes
 literal_match_(S,Match) :-
 	match_chars(S,Chars),                    % convert S string to escaped Chars list
 	string_chars(Match,Chars).               % string to match
 
 
-% chars instruction
+% class instruction
 % construct list of MChars for matching
 match_chars(MatchSet, MChars) :- 
 	sub_string(MatchSet,1,_,1,Str),  % strips outer [], ", '
@@ -530,11 +558,11 @@ std_escape_('r','\r').
 std_escape_('t','\t').
 
 % search for Ch in list of MChars (including ranges)
-chars_in_match([],_Ch,In) :- In == notin.                 % EOList, succeed if 'notin'
-chars_in_match([Cl,'-',Cu|MChars],Ch,In) :- !,            % range
-	(Cl@=<Ch,Ch@=<Cu -> In == in ; chars_in_match(MChars,Ch,In)).
-chars_in_match([Cl|MChars],Ch,In) :-                      % equivalence
-	(Cl==Ch -> In == in ; chars_in_match(MChars,Ch,In)).
+chars_in_match([],notin,_Ch).                             % EOList, succeed if 'notin'
+chars_in_match([Cl,'-',Cu|MChars],In,Ch) :- !,            % range
+	(Cl@=<Ch,Ch@=<Cu -> In == in ; chars_in_match(MChars,In,Ch)).
+chars_in_match([Cl|MChars],In,Ch) :-                      % equivalence
+	(Cl==Ch -> In == in ; chars_in_match(MChars,In,Ch)).
 
 
 % id/call instruction
@@ -551,6 +579,36 @@ recursive_loop_check(Goal,Last,Pos,Name) :-
 	 ;  true
 	).
 
+% maps a scheme name (string) and rule name to RType, member(Treat,[anonymous,dynamic,component])
+% %:- multifile scheme_treatment/3.          % user hook
+
+scheme_treatment("=",Name,Treat) :- 
+	sub_atom(Name,0,1,_,C),  % dependent on first character of rule name
+	( C == '_'           -> (Treat = anonymous)
+	; char_type(C,lower) -> (Treat = dynamic)
+	;                       (Treat = component)
+	).
+scheme_treatment(":",_Name,anonymous).
+scheme_treatment(":=",_Name,component).
+scheme_treatment("=:",_Name,leaf).
+
+% build mode - build ptree from a flattened list of args
+build_ptree(anonymous,_Args,_Match,_Name,[]) :- !.          % no node
+build_ptree(leaf,_,Match,Name,R) :- !,                      % terminal node
+	build_ptree_([],dynamic,Match,Name,R).
+build_ptree(RType,Arg,Match,Name,R) :-                      % non-terminal
+	flatten_(Arg,[],Children),
+	build_ptree_(Children,RType,Match,Name,R).
+
+build_ptree_([],dynamic,slice(Input,PosIn,PosOut),Name,R) :- !,  % no args -> match string
+	Len is PosOut-PosIn,
+	sub_string(Input,PosIn,Len,_,MStr),
+	R =.. [Name,MStr].
+build_ptree_([Child],dynamic,_Match,_Name,Child) :- !,           % single arg, unwrap
+	compound(Child).
+build_ptree_(Children,_RType,_Match,Name,R) :-                   % general case
+	R =.. [Name,Children].
+
 % flatten arguments and remove [] (uses difference lists)
 flatten_([], Tl, Tl) :-
 	!.
@@ -560,33 +618,13 @@ flatten_([Hd|Tl], Tail, List) :-
 	flatten_(Tl, Tail, FlatHeadTail).
 flatten_(NonList, Tl, [NonList|Tl]).
 
-% maps a scheme name (string) and rule name to RType, member(Treat,[anonymous,dynamic,component])
-% %:- multifile scheme_treatment/3.          % user hook
-
-scheme_treatment("=",Name,Treat) :- 
-	sub_string(Name,0,1,_,C),
-	pPEG_type(C,Treat).
-scheme_treatment(":",_Name,anonymous).
-scheme_treatment(":=",_Name,component).
-scheme_treatment("=:",_Name,leaf).
-
-% "=" rules, Name dependent
-pPEG_type("_",anonymous).
-pPEG_type(C,dynamic) :- char_type(C,lower), !.
-pPEG_type(_,component).
-
-% build a ptree from a flattened list of args
-build_ptree(anonymous,_Args,_Match,_Name,[]) :- !. 
-build_ptree(leaf,_,slice(Input,PosIn,PosOut),Name,R) :- !,  % matching text
-	Len is PosOut-PosIn,
-	sub_string(Input,PosIn,Len,_,Arg),
-	R =.. [Name,Arg].
-build_ptree(dynamic,[],Match,Name,R) :- !,         % no args -> leaf
-	build_ptree(leaf,_,Match,Name,R).
-build_ptree(dynamic,[Arg],_Match,_Name,Arg) :- !,  % single arg, unwrap
-	compound(Arg).
-build_ptree(_RType,Arg,_Match,Name,R) :-           % general case
-	R =.. [Name,Arg].
+% diagnose mode  - build nothing
+wrap_build_ptree(pPEG:build_ptree/5, Label) :-
+	Label = 'pPEG:build_ptree',
+	wrap_predicate(pPEG:build_ptree(_RType,_Arg,_Match,_Name,R), 
+	               Label,
+	               _,
+	               R = []).  % nothing!
 
 
 % extn instruction
@@ -679,42 +717,41 @@ peg_notrace :-
 doEval_wrap_(Wrapped, Inst, Env, Input, PosIn, PosOut, R) :-
 	peg_inst_type(Inst,Type),
 	vm_instruction(Inst,TInst),
-	persistent_env_(Env,PEnv),
-	peg_trace_port_(Type, call, TInst, PEnv, Input, PosIn, PosOut, R),	
+	peg_trace_port_(Type, call, TInst, Env, Input, PosIn, PosOut, R),	
 	(Wrapped   % execute eval_/6
-	 -> peg_trace_port_(Type, exit, TInst, PEnv, Input, PosIn, PosOut, R)
-	 ;  peg_trace_port_(Type, fail, TInst, PEnv, Input, PosIn, PosOut, R),
+	 -> peg_trace_port_(Type, exit, TInst, Env, Input, PosIn, PosOut, R)
+	 ;  peg_trace_port_(Type, fail, TInst, Env, Input, PosIn, PosOut, R),
 	    fail
 	).
 
-peg_trace_port_(call, call, TInst, PEnv, Input, PosIn, _PosOut, _R) :- !,
+peg_trace_port_(call, call, TInst, Env, Input, PosIn, _PosOut, _R) :- !,
 	peg_cursor_pos(Input,PosIn,Cursor),
-	peg_trace_msg(postInc, PEnv, "~w~w~w", [Cursor,TInst]).            % with indent parm
-peg_trace_port_(call, fail, TInst, PEnv, Input, PosIn, _PosOut, _R) :- !,
+	peg_trace_msg(postInc, Env, "~w~w~w", [Cursor,TInst]).            % with indent parm
+peg_trace_port_(call, fail, TInst, Env, Input, PosIn, _PosOut, _R) :- !,
 	peg_cursor_pos(Input,PosIn,Cursor),
 	peg_trace_input(Input,PosIn,Str),
-	peg_trace_msg(preDec, PEnv, "~w~w~w != \t~p", [Cursor,TInst,Str]). % with indent parm
-peg_trace_port_(call, exit, TInst, PEnv, Input, PosIn, PosOut, R) :- !,
-	peg_cursor_pos(Input,PosOut,Cursor),		
+	peg_trace_msg(preDec, Env, "~w~w~w != \t~p", [Cursor,TInst,Str]). % with indent parm
+peg_trace_port_(call, exit, TInst, Env, Input, PosIn, PosOut, R) :- !,
+	peg_cursor_pos(Input,PosOut,Cursor),
 	(R = []  % if null result (_rule), print matching string
 	 -> Len is PosOut-PosIn,
 	    sub_string(Input,PosIn,Len,_,RT) 
 	 ;  RT = R
 	),
 	(string(RT) -> MatchOp = "==" ; MatchOp = "=>"),
-	peg_trace_msg(preDec, PEnv, "~w~w~w ~w \t~p", [Cursor,TInst,MatchOp,RT]). % with indent parm
-peg_trace_port_(meta, call, TInst, PEnv, Input, PosIn, _PosOut, _R) :- !,
+	peg_trace_msg(preDec, Env, "~w~w~w ~w \t~p", [Cursor,TInst,MatchOp,RT]). % with indent parm
+peg_trace_port_(meta, call, TInst, Env, Input, PosIn, _PosOut, _R) :- !,
 	peg_cursor_pos(Input,PosIn,Cursor),
-	peg_trace_msg(indent, PEnv, "~w~w~w", [Cursor,TInst]).             % with indent parm
-peg_trace_port_(terminal, fail, TInst, PEnv, Input, PosIn, _PosOut, _R) :- !,
+	peg_trace_msg(indent, Env, "~w~w~w", [Cursor,TInst]).             % with indent parm
+peg_trace_port_(terminal, fail, TInst, Env, Input, PosIn, _PosOut, _R) :- !,
 	peg_cursor_pos(Input,PosIn,Cursor),
 	peg_trace_input(Input,PosIn,Str),
-	peg_trace_msg(indent, PEnv, "~w~w~w != \t~p", [Cursor,TInst,Str]). % with indent parm
-peg_trace_port_(terminal, exit, TInst, PEnv, Input, PosIn, PosOut, _R) :- !,
+	peg_trace_msg(indent, Env, "~w~w~w != \t~p", [Cursor,TInst,Str]). % with indent parm
+peg_trace_port_(terminal, exit, TInst, Env, Input, PosIn, PosOut, _R) :- !,
 	peg_cursor_pos(Input,PosOut,Cursor),
 	Len is PosOut-PosIn,
 	sub_string(Input,PosIn,Len,_,RT),
-	peg_trace_msg(indent, PEnv, "~w~w~w == \t~p", [Cursor,TInst,RT]).  % with indent parm
+	peg_trace_msg(indent, Env, "~w~w~w == \t~p", [Cursor,TInst,RT]).  % with indent parm
 peg_trace_port_(_Other, _, _, _, _, _, _, _).  % else no trace message
 
 peg_inst_type(alt(_),meta).
@@ -762,18 +799,18 @@ peg_trace_input(Input,PosIn,Str) :-
 	    string_concat(SStr1," ... ",Str)
 	).
 
-peg_trace_msg(postInc, PEnv, Msg, [Cursor|Args]) :-
-	arg(2,PEnv,Indent),
+peg_trace_msg(postInc, Env, Msg, [Cursor|Args]) :-
+	get_msg_indent(Env,Indent),
 	debug_peg_trace(Msg,[Cursor,Indent|Args]),
 	string_concat(Indent,"|  ",NxtIndent),      % add "|  " to current indent
-	nb_linkarg(2,PEnv,NxtIndent).
-peg_trace_msg(preDec, PEnv, Msg, [Cursor|Args]) :-
-	arg(2,PEnv,Indent),
+	set_msg_indent(Env,NxtIndent).
+peg_trace_msg(preDec, Env, Msg, [Cursor|Args]) :-
+	get_msg_indent(Env,Indent),
 	sub_string(Indent,0,_,3,NxtIndent),         % subtract 3 chars from end of current indent
 	debug_peg_trace(Msg,[Cursor,NxtIndent|Args]),
-	nb_linkarg(2,PEnv,NxtIndent).
-peg_trace_msg(indent, PEnv, Msg, [Cursor|Args]) :-
-	arg(2,PEnv,Indent),
+	set_msg_indent(Env,NxtIndent).
+peg_trace_msg(indent, Env, Msg, [Cursor|Args]) :-
+	get_msg_indent(Env,Indent),
 	debug_peg_trace(Msg,[Cursor,Indent|Args]).
 
 %
@@ -855,12 +892,30 @@ escape_chars([C|CharsIn],[C|CharsOut]) :-
 escape_chars([ECh|CharsIn],['\\',Ch|CharsOut]) :- 
 	std_escape_(Ch,ECh),!,                      % escapes
 	escape_chars(CharsIn,CharsOut).
-escape_chars([C|CharsIn],['\\','u',X1,X2,X3,X4|CharsOut]) :-
+escape_chars([C|CharsIn],CharsEsc) :-
 	char_code(C,CS), % (CS =< 31 ; CS >= 127),  % outside ASCII, but not std escape
-	divmod(CS,16,Q4,R4),
-	divmod(Q4,16,Q3,R3),
-	divmod(Q3,16,R1,R2),
-	char_type(X1,xdigit(R1)), char_type(X2,xdigit(R2)), char_type(X3,xdigit(R3)), char_type(X4,xdigit(R4)),
+	CS > 0xFFFF, !,  % won't fit in \u escape
+	divmod(CS,16,Q8,R8), char_type(X8,xdigit(R8)),
+	divmod(Q8,16,Q7,R7), char_type(X7,xdigit(R7)),
+	divmod(Q7,16,Q6,R6), char_type(X6,xdigit(R6)),
+	divmod(Q6,16,Q5,R5), char_type(X5,xdigit(R5)),
+	divmod(Q5,16,Q4,R4), char_type(X4,xdigit(R4)),
+	divmod(Q4,16,Q3,R3), char_type(X3,xdigit(R3)),
+	divmod(Q3,16,R1,R2), char_type(X1,xdigit(R1)), char_type(X2,xdigit(R2)),
+	CharsEsc = ['\\','U',X1,X2,X3,X4,X5,X6,X7,X8|CharsOut],
+	escape_chars(CharsIn,CharsOut).
+escape_chars([C|CharsIn],CharsEsc) :-
+	char_code(C,CS),
+	CS > 0xFF, !,    % won't fit in \x escape
+	divmod(CS,16,Q4,R4), char_type(X4,xdigit(R4)),
+	divmod(Q4,16,Q3,R3), char_type(X3,xdigit(R3)),
+	divmod(Q3,16,R1,R2), char_type(X1,xdigit(R1)), char_type(X2,xdigit(R2)),
+	CharsEsc = ['\\','u',X1,X2,X3,X4|CharsOut],
+	escape_chars(CharsIn,CharsOut).
+escape_chars([C|CharsIn],CharsEsc) :-
+	char_code(C,CS), % outside std ASCII and supported escapes but =< than 255
+	divmod(CS,16,R1,R2), char_type(X1,xdigit(R1)), char_type(X2,xdigit(R2)),
+	CharsEsc = ['\\','x',X1,X2|CharsOut],
 	escape_chars(CharsIn,CharsOut).
 
 %
@@ -926,6 +981,8 @@ optimize_exp(rep([Exp, ROp]), RDefs, rep_O(ExpO, Min, Max)) :-
 
 optimize_exp(pre([pfx("~"), class(MatchSet)]), RDefs, class_O(notin,MChars)) :- !,
 	optimize_exp(class(MatchSet), RDefs, class_O(_,MChars)).
+optimize_exp(pre([pfx("~"), quote(QS)]), _RDefs, class_O(notin,[MChar])) :-
+	match_chars(QS,[MChar]), !.  % QS is a string of length one, e.g., "'" (match_chars handles escapes)
 optimize_exp(pre([pfx(POp), Exp]), RDefs, pre([pfx(POp), ExpO])) :-
 	optimize_exp(Exp,RDefs,ExpO).
 
@@ -933,9 +990,8 @@ optimize_exp(class(MatchSet), _RDefs, class_O(in,MChars)) :-
 	match_chars(MatchSet, MChars).
 
 optimize_exp(quote(QS), _RDefs, quote_O(Case,Match)) :-
-	(sub_string(QS,_,1,0,"i")                  % case insensitive match test
+	(string_concat(S,'i',QS)                   % case insensitive match test
 	 -> Case = upper,
-	    sub_string(QS,0,_,1,S),                % strip i
 	    literal_match_(S,AMatch),              % string to match
 	    string_upper(AMatch,Match)
 	 ;  Case = exact,
@@ -949,8 +1005,8 @@ optimize_exp(extn(S), _RDefs, extn(T)) :-      % extn "instruction"
 
 optimize_exp(call_O(Rule), _RDefs, call_O(Rule)).                 % already optimized?
 optimize_exp(rep_O(Exp, Min, Max), _RDefs, rep_O(Exp, Min, Max)). % already optimized?
-optimize_exp(quote_O(C,M), _RDefs, quote_O(C,M)).                       % already optimized?
-optimize_exp(class_O(M), _RDefs, class_O(M)).                         % already optimized?
+optimize_exp(quote_O(C,M), _RDefs, quote_O(C,M)).                 % already optimized?
+optimize_exp(class_O(I,M), _RDefs, class_O(I,M)).                 % already optimized?
 % Note: trace instructions don't appear in static grammar.
 
 optimize_exp_list([],_RDefs,[]).

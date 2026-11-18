@@ -298,6 +298,11 @@ While this shows exactly how the parse failed, it's quite voluminous. The amount
 %          ^
 false.
 ```
+Recent versions of this pack support the concept of modal parsing. Initial parsing is done in "build" mode. In this mode, the *ptree* is generated, but no diagnostic information is retained. So a successful parse is both more time and memory efficient.
+
+If this initial parse fails, the default behaviour is to repeat the parse in "diagnose" mode, which collects the diagnostic information but doesn't generate the *ptree* (since that is known to fail). This two step process produces the same external behaviour as the single step parse implemented in earlier releases.
+
+For applications wishing to avoid the overhead of a diagnostic pass in favour of simple failure, use option `verbose(silent)` or the equivalent setting of the `verbose` Prolog global environmental flag.
 
 ### Implementing `pPEG` Extensions
 
@@ -564,7 +569,8 @@ Hopefully these few examples demonstrate how a generic `@` extension can address
 	]).
   
 :- use_module(library(strings),[string/4]).         % for quasi-quoted strings
-:- use_module(library(debug)).                      % for tracing (see peg_trace/0)
+:- use_module(library(lists),[reverse/2]).          % gen calling path in error msgs
+:- use_module(library(prolog_wrap)).                % for tracing and parse modes
 :- use_module(library(option),[option/3]).          % for option list processing
 :- use_module(library(pcre),[re_matchsub/4]).       % uses a regular expression for error & trace output
 :- use_module(library(quasi_quotations), [          % pPEG as quasi-quotation

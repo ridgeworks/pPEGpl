@@ -1,6 +1,6 @@
 /*	The MIT License (MIT)
  *
- *	Copyright (c) 2021-2025 Rick Workman
+ *	Copyright (c) 2021-2026 Rick Workman
  *
  *	Permission is hereby granted, free of charge, to any person obtaining a copy
  *	of this software and associated documentation files (the "Software"), to deal
@@ -136,7 +136,7 @@ test(sel, R=rule1("a")) :-
 	parse_test("rule1 = 'a' / 'b'", "a", R, []).
 test(sel, R=rule1("b")) :-
 	parse_test("rule1 = 'a' / 'b'", "b", R, []).
-test(seq, fail) :-
+test(sel, fail) :-
 	parse_test("rule1 = 'a' / 'b'", "c", _R, []).
 
 test(rep, R=rule1("")) :-

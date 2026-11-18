@@ -3,7 +3,7 @@
 %
 /*	The MIT License (MIT)
  *
- *	Copyright (c) 2022,2023 Rick Workman
+ *	Copyright (c) 2022-2026 Rick Workman
  *
  *	Permission is hereby granted, free of charge, to any person obtaining a copy
  *	of this software and associated documentation files (the "Software"), to deal
@@ -145,12 +145,12 @@ prolog_grammar({|pPEG||
 
 |}).
 
-/* To restrict "Prolog' to clauses, replace Prolog rule with:
-	Prolog = " " (Clause _eox)+
-	Clause = expr " " (Body / DCG / SSU)?
-	Body   = "->  " expr
-	DCG    = "--> " expr
-	SSU    = ", "   expr " => " expr
+/* To restrict "Prolog" to clauses, replace Prolog rule with:
+	Prolog = _ (Clause _eox)+
+	Clause = expr _ (Body / DCG / SSU)?
+	Body   = '->'  _ expr
+	DCG    = '-->' _ expr
+	SSU    = (',' _ expr)* _ '=>' _ expr
 Note: untested.
 */
 :- current_module(pPEG) -> true  ; use_module(library(pPEG),[peg_lookup_previous/3]).
